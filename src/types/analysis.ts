@@ -8,6 +8,7 @@ export interface BranchInfo {
   current: boolean;
   commit: string;
   lastActivity: Date;
+  lastCommitAuthor: string;
   isStale: boolean;
   commitCount: number;
   divergence: {

@@ -15,6 +15,7 @@ interface BatchBranchData {
   commit: string;
   current: boolean;
   lastCommitDate?: string;
+  lastCommitAuthor?: string;
   commitCount?: number;
   mergedIntoDefault?: boolean;
 }
@@ -165,6 +166,7 @@ export class GitAnalyzer {
             commit: refInfo.commit,
             current: branchName === branches.current,
             lastCommitDate: refInfo.date,
+            lastCommitAuthor: refInfo.author,
             commitCount: commitCounts.get(branchName) || 0,
             mergedIntoDefault: mergedBranches.has(branchName)
           } as BatchBranchData;
@@ -177,6 +179,7 @@ export class GitAnalyzer {
           commit: branch.commit,
           current: branchName === branches.current,
           lastCommitDate: refInfo.date,
+          lastCommitAuthor: refInfo.author,
           commitCount: commitCounts.get(branchName) || 0,
           mergedIntoDefault: mergedBranches.has(branchName)
         } as BatchBranchData;
@@ -345,6 +348,7 @@ export class GitAnalyzer {
       current: branch.current,
       commit: branch.commit,
       lastActivity: new Date(branch.lastCommitDate || Date.now()),
+      lastCommitAuthor: branch.lastCommitAuthor || 'Unknown',
       isStale: false, // Will be calculated below
       commitCount: branch.commitCount || 0,
       divergence: { ahead: 0, behind: 0 },
@@ -403,6 +407,7 @@ export class GitAnalyzer {
       current: branch.current,
       commit: branch.commit,
       lastActivity: new Date(branch.lastCommitDate || Date.now()),
+      lastCommitAuthor: branch.lastCommitAuthor || 'Unknown',
       isStale: this.isStale(new Date(branch.lastCommitDate || Date.now())),
       commitCount: branch.commitCount || 0,
       divergence: { ahead: 0, behind: 0 },

@@ -161,14 +161,14 @@ export class BranchListView implements UIView {
     
     const header = `
 📋 Branch List (Sorted by ${this.sortBy}${this.filterStale ? ', Stale Only' : ''})
-${'='.repeat(60)}
+${'='.repeat(100)}
 
 Controls: ↑/↓ Navigate | t: Sort | f: Filter Stale | PgUp/PgDn: Page | Home/End
 
 Showing ${this.scrollOffset + 1}-${Math.min(this.scrollOffset + this.pageSize, branches.length)} of ${branches.length} branches
 
-${'Sel'.padEnd(3)} ${'Cur'.padEnd(3)} ${'Status'.padEnd(6)} ${'Branch Name'.padEnd(25)} ${'Age'.padEnd(5)} ${'Commits'.padEnd(7)} ${'Merge'}
-${'---'.padEnd(3)} ${'---'.padEnd(3)} ${'------'.padEnd(6)} ${'-'.repeat(25)} ${'-----'.padEnd(5)} ${'-------'.padEnd(7)} ${'-----'}
+${'Sel'.padEnd(3)} ${'Cur'.padEnd(3)} ${'Status'.padEnd(6)} ${'Branch Name'.padEnd(25)} ${'Age'.padEnd(5)} ${'Commits'.padEnd(7)} ${'Last Commit'.padEnd(16)} ${'Author'.padEnd(15)} ${'Merge'}
+${'---'.padEnd(3)} ${'---'.padEnd(3)} ${'------'.padEnd(6)} ${'-'.repeat(25)} ${'-----'.padEnd(5)} ${'-------'.padEnd(7)} ${'-'.repeat(16)} ${'-'.repeat(15)} ${'-----'}
 `;
 
     const branchLines = visibleBranches.map((branch, displayIndex) => {
@@ -193,7 +193,40 @@ ${'---'.padEnd(3)} ${'---'.padEnd(3)} ${'------'.padEnd(6)} ${'-'.repeat(25)} ${
       const branchName = branch.name.length > 24 ? branch.name.substring(0, 21) + '...' : branch.name;
       const ageStr = `${age}d`;
       
-      return `${prefix.padEnd(3)} ${current.padEnd(3)} ${status.padEnd(6)} ${branchName.padEnd(25)} ${ageStr.padEnd(5)} ${branch.commitCount.toString().padEnd(7)} ${mergeable}`;
+      // Format last commit date/time
+      const lastCommitDate = branch.lastActivity;
+      const now = new Date();
+      const diffHours = Math.floor((now.getTime() - lastCommitDate.getTime()) / (1000 * 60 * 60));
+      
+      let lastCommitStr = '';
+      if (diffHours < 1) {
+        lastCommitStr = 'just now';
+      } else if (diffHours < 24) {
+        lastCommitStr = `${diffHours}h ago`;
+      } else if (diffHours < 24 * 7) {
+        const days = Math.floor(diffHours / 24);
+        lastCommitStr = `${days}d ago`;
+      } else {
+        // For older commits, show the actual date
+        lastCommitStr = lastCommitDate.toLocaleDateString('en-US', { 
+          month: 'short', 
+          day: 'numeric',
+          year: lastCommitDate.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+        });
+      }
+      
+      // Ensure the lastCommitStr fits in the column
+      if (lastCommitStr.length > 15) {
+        lastCommitStr = lastCommitStr.substring(0, 12) + '...';
+      }
+      
+      // Format author name
+      let authorStr = branch.lastCommitAuthor || 'Unknown';
+      if (authorStr.length > 14) {
+        authorStr = authorStr.substring(0, 11) + '...';
+      }
+      
+      return `${prefix.padEnd(3)} ${current.padEnd(3)} ${status.padEnd(6)} ${branchName.padEnd(25)} ${ageStr.padEnd(5)} ${branch.commitCount.toString().padEnd(7)} ${lastCommitStr.padEnd(16)} ${authorStr.padEnd(15)} ${mergeable}`;
     });
 
     const legend = `

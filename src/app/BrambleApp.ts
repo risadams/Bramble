@@ -2,11 +2,14 @@ import chalk from 'chalk';
 import { GitAnalyzer } from '../core/GitAnalyzer.js';
 import { TerminalUI } from '../ui/TerminalUI.js';
 import { ExportService } from '../services/ExportService.js';
+import { BrambleConfig } from '../types/config.js';
 
 interface BrambleOptions {
   batch?: boolean;
   output?: string;
   verbose?: boolean;
+  export?: string;
+  config?: BrambleConfig;
 }
 
 export class BrambleApp {
@@ -35,6 +38,11 @@ export class BrambleApp {
         console.log(chalk.green('✅ Analysis complete'));
       }
 
+      // Export if requested
+      if (this.options.export) {
+        await this.exportResults(analysisResult);
+      }
+
       // Start interactive UI
       await this.ui.start(analysisResult);
 
@@ -42,5 +50,17 @@ export class BrambleApp {
       console.error(chalk.red('❌ Application error:'), error);
       throw error;
     }
+  }
+
+  private async exportResults(analysisResult: any): Promise<void> {
+    if (!this.options.export) return;
+
+    const format = this.options.output || this.options.config?.defaultExportFormat || 'json';
+    const exportData = await this.exportService.export(analysisResult, { 
+      format: format as any,
+      outputPath: this.options.export
+    });
+
+    console.log(chalk.green(`📄 Results exported to: ${this.options.export}`));
   }
 }

@@ -1,34 +1,67 @@
 import blessed from 'blessed';
 import { AnalysisResult } from '../core/GitAnalyzer.js';
+import { 
+  ViewType, 
+  UIView, 
+  OverviewView, 
+  BranchListView, 
+  StatisticsView, 
+  ActivityView,
+  VisualizationsView
+} from './UIViews.js';
 
 export class TerminalUI {
   private screen: blessed.Widgets.Screen | null = null;
+  private currentView: ViewType = ViewType.OVERVIEW;
+  private views: Map<ViewType, UIView> = new Map();
+  private content: blessed.Widgets.BoxElement | null = null;
+  private navigation: blessed.Widgets.BoxElement | null = null;
+  private footer: blessed.Widgets.BoxElement | null = null;
+
+  constructor() {
+    this.initializeViews();
+  }
+
+  private initializeViews(): void {
+    this.views.set(ViewType.OVERVIEW, new OverviewView());
+    this.views.set(ViewType.BRANCH_LIST, new BranchListView());
+    this.views.set(ViewType.STATISTICS, new StatisticsView());
+    this.views.set(ViewType.ACTIVITY, new ActivityView());
+    this.views.set(ViewType.VISUALIZATIONS, new VisualizationsView());
+  }
 
   public async start(analysisResult: AnalysisResult): Promise<void> {
     // Create blessed screen
     this.screen = blessed.screen({
       smartCSR: true,
-      title: 'Bramble - Git Branch Analysis'
+      title: 'Bramble - Git Branch Analysis',
+      fullUnicode: true
     });
 
-    // Create main container
-    const container = blessed.box({
-      parent: this.screen,
-      width: '100%',
-      height: '100%',
-      style: {
-        bg: 'black'
-      }
-    });
+    // Create main layout
+    this.createLayout(analysisResult);
+
+    // Handle key events
+    this.setupKeyHandlers(analysisResult);
+
+    // Initial render
+    this.renderCurrentView(analysisResult);
+
+    // Render the screen
+    this.screen.render();
+  }
+
+  private createLayout(analysisResult: AnalysisResult): void {
+    if (!this.screen) return;
 
     // Create header
     const header = blessed.box({
-      parent: container,
+      parent: this.screen,
       top: 0,
       left: 0,
       width: '100%',
       height: 3,
-      content: ' 🌿 Bramble - Git Branch Analysis Tool',
+      content: ` 🌿 Bramble - ${analysisResult.repository.path}`,
       style: {
         bg: 'blue',
         fg: 'white',
@@ -36,38 +69,83 @@ export class TerminalUI {
       }
     });
 
-    // Create main content area
-    const content = blessed.box({
-      parent: container,
+    // Create navigation bar
+    this.navigation = blessed.box({
+      parent: this.screen,
       top: 3,
       left: 0,
       width: '100%',
-      height: '100%-6',
-      scrollable: true,
-      style: {
-        bg: 'black',
-        fg: 'white'
-      }
-    });
-
-    // Display analysis results
-    this.displayOverview(content, analysisResult);
-
-    // Create footer with instructions
-    const footer = blessed.box({
-      parent: container,
-      bottom: 0,
-      left: 0,
-      width: '100%',
-      height: 3,
-      content: ' Press q to quit | Press b for branch list | Press s for statistics',
+      height: 2,
+      content: this.getNavigationContent(),
       style: {
         bg: 'gray',
         fg: 'white'
       }
     });
 
-    // Handle key events
+    // Create main content area
+    this.content = blessed.box({
+      parent: this.screen,
+      top: 5,
+      left: 0,
+      width: '100%',
+      height: '100%-8',
+      scrollable: true,
+      alwaysScroll: true,
+      keys: true,
+      vi: true,
+      style: {
+        bg: 'black',
+        fg: 'white'
+      }
+    });
+
+    // Create footer with instructions
+    this.footer = blessed.box({
+      parent: this.screen,
+      bottom: 0,
+      left: 0,
+      width: '100%',
+      height: 3,
+      content: this.getFooterContent(),
+      style: {
+        bg: 'gray',
+        fg: 'white'
+      }
+    });
+  }
+
+  private getNavigationContent(): string {
+    const views = [
+      { key: 'o', name: 'Overview', type: ViewType.OVERVIEW },
+      { key: 'b', name: 'Branches', type: ViewType.BRANCH_LIST },
+      { key: 's', name: 'Statistics', type: ViewType.STATISTICS },
+      { key: 'a', name: 'Activity', type: ViewType.ACTIVITY },
+      { key: 'v', name: 'Visualizations', type: ViewType.VISUALIZATIONS }
+    ];
+
+    return ' ' + views.map(view => {
+      const active = view.type === this.currentView;
+      return active ? `[${view.key}] ${view.name}` : `${view.key}: ${view.name}`;
+    }).join(' | ');
+  }
+
+  private getFooterContent(): string {
+    const baseControls = 'q/Esc: Quit | o: Overview | b: Branches | s: Statistics | a: Activity | v: Visualizations';
+    
+    switch (this.currentView) {
+      case ViewType.BRANCH_LIST:
+        return ` ${baseControls} | ↑/↓: Navigate | s: Sort | f: Filter`;
+      case ViewType.VISUALIZATIONS:
+        return ` ${baseControls} | t: Tree | h: Heatmap | r: Relationships | d: Dashboard`;
+      default:
+        return ` ${baseControls}`;
+    }
+  }
+
+  private setupKeyHandlers(analysisResult: AnalysisResult): void {
+    if (!this.screen) return;
+
     this.screen.key(['escape', 'q', 'C-c'], () => {
       if (this.screen) {
         this.screen.destroy();
@@ -75,44 +153,61 @@ export class TerminalUI {
       process.exit(0);
     });
 
-    // Render the screen
-    this.screen.render();
+    // View navigation keys
+    this.screen.key(['o'], () => {
+      this.switchView(ViewType.OVERVIEW, analysisResult);
+    });
+
+    this.screen.key(['b'], () => {
+      this.switchView(ViewType.BRANCH_LIST, analysisResult);
+    });
+
+    this.screen.key(['s'], () => {
+      this.switchView(ViewType.STATISTICS, analysisResult);
+    });
+
+    this.screen.key(['a'], () => {
+      this.switchView(ViewType.ACTIVITY, analysisResult);
+    });
+
+    this.screen.key(['v'], () => {
+      this.switchView(ViewType.VISUALIZATIONS, analysisResult);
+    });
+
+    // Handle view-specific key events
+    this.screen.on('keypress', (ch, key) => {
+      const currentViewHandler = this.views.get(this.currentView);
+      if (currentViewHandler && currentViewHandler.handleKeypress(key.name, analysisResult)) {
+        this.renderCurrentView(analysisResult);
+        this.updateNavigation();
+        this.screen?.render();
+      }
+    });
   }
 
-  private displayOverview(container: blessed.Widgets.BoxElement, result: AnalysisResult): void {
-    const overview = `
-Repository Overview:
-==================
-Path: ${result.repository.path}
-Default Branch: ${result.repository.defaultBranch}
-Total Branches: ${result.repository.totalBranches}
-Stale Branches: ${result.repository.staleBranches}
+  private switchView(newView: ViewType, analysisResult: AnalysisResult): void {
+    this.currentView = newView;
+    this.renderCurrentView(analysisResult);
+    this.updateNavigation();
+    this.screen?.render();
+  }
 
-Statistics:
-===========
-Average Branch Age: ${result.statistics.averageAge.toFixed(1)} days
-Most Active Branch: ${result.statistics.mostActive}
-Least Active Branch: ${result.statistics.leastActive}
-Total Commits: ${result.statistics.totalCommits}
+  private renderCurrentView(analysisResult: AnalysisResult): void {
+    if (!this.content) return;
 
-Recent Branches:
-===============`;
+    const view = this.views.get(this.currentView);
+    if (view) {
+      view.render(this.content, analysisResult);
+    }
+  }
 
-    container.setContent(overview);
-
-    // Add branch list
-    const recentBranches = result.branches
-      .sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime())
-      .slice(0, 10);
-
-    let branchList = '';
-    for (const branch of recentBranches) {
-      const status = branch.current ? '* ' : '  ';
-      const staleMarker = branch.isStale ? ' (STALE)' : '';
-      const age = Math.floor((Date.now() - branch.lastActivity.getTime()) / (1000 * 60 * 60 * 24));
-      branchList += `${status}${branch.name} - ${age} days ago${staleMarker}\n`;
+  private updateNavigation(): void {
+    if (this.navigation) {
+      this.navigation.setContent(this.getNavigationContent());
     }
 
-    container.setContent(overview + '\n\n' + branchList);
+    if (this.footer) {
+      this.footer.setContent(this.getFooterContent());
+    }
   }
 }

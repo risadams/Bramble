@@ -1,5 +1,9 @@
 # Bramble
 
+<p align="center">
+  <img width="1280" src="assets/logo_4x.png">
+</p>
+
 A terminal-based tool for advanced git branch analysis and visualization, providing insights into branch relationships, commit patterns, and repository health metrics.
 
 ## Features

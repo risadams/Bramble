@@ -1,4 +1,9 @@
-import simpleGit, { SimpleGit, BranchSummary, LogResult } from 'simple-git';
+import simpleGit, { SimpleGit, BranchSummary, LogResult, StatusResult } from 'simple-git';
+
+export interface CommitActivity {
+  date: string;
+  count: number;
+}
 
 export interface BranchInfo {
   name: string;
@@ -12,6 +17,10 @@ export interface BranchInfo {
     behind: number;
   };
   contributors: string[];
+  mergeable: boolean;
+  conflictCount: number;
+  commitFrequency: CommitActivity[];
+  size: number; // lines of code changed
 }
 
 export interface AnalysisResult {
@@ -20,6 +29,8 @@ export interface AnalysisResult {
     defaultBranch: string;
     totalBranches: number;
     staleBranches: number;
+    mergeableBranches: number;
+    conflictedBranches: number;
   };
   branches: BranchInfo[];
   statistics: {
@@ -27,6 +38,15 @@ export interface AnalysisResult {
     mostActive: string;
     leastActive: string;
     totalCommits: number;
+    averageCommitsPerBranch: number;
+    totalContributors: number;
+    averageBranchSize: number;
+    mostConflicted: string;
+  };
+  activityOverview: {
+    dailyActivity: CommitActivity[];
+    topContributors: Array<{ name: string; commits: number }>;
+    branchTypes: Array<{ type: string; count: number }>;
   };
 }
 
@@ -46,6 +66,9 @@ export class GitAnalyzer {
       // Calculate statistics
       const statistics = this.calculateStatistics(branchInfos);
       
+      // Generate activity overview
+      const activityOverview = this.generateActivityOverview(branchInfos);
+      
       // Get repository info
       const defaultBranch = await this.getDefaultBranch();
       
@@ -54,10 +77,13 @@ export class GitAnalyzer {
           path: this.repositoryPath,
           defaultBranch,
           totalBranches: branchInfos.length,
-          staleBranches: branchInfos.filter(b => b.isStale).length
+          staleBranches: branchInfos.filter(b => b.isStale).length,
+          mergeableBranches: branchInfos.filter(b => b.mergeable).length,
+          conflictedBranches: branchInfos.filter(b => b.conflictCount > 0).length
         },
         branches: branchInfos,
-        statistics
+        statistics,
+        activityOverview
       };
     } catch (error) {
       throw new Error(`Failed to analyze repository: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -66,6 +92,7 @@ export class GitAnalyzer {
 
   private async analyzeBranches(branches: BranchSummary): Promise<BranchInfo[]> {
     const branchInfos: BranchInfo[] = [];
+    const defaultBranch = await this.getDefaultBranch();
     
     for (const branchName of Object.keys(branches.branches)) {
       const branch = branches.branches[branchName];
@@ -75,7 +102,11 @@ export class GitAnalyzer {
         const log = await this.git.log({ from: branch.commit, maxCount: 1 });
         const commitCount = await this.getCommitCount(branchName);
         const contributors = await this.getContributors(branchName);
-        const divergence = await this.getDivergence(branchName);
+        const divergence = await this.getDivergence(branchName, defaultBranch);
+        const commitFrequency = await this.getCommitFrequency(branchName);
+        const mergeable = await this.checkMergeable(branchName, defaultBranch);
+        const conflictCount = await this.getConflictCount(branchName, defaultBranch);
+        const size = await this.getBranchSize(branchName);
         
         const lastActivity = log.latest?.date ? new Date(log.latest.date) : new Date();
         const isStale = this.isStale(lastActivity);
@@ -88,7 +119,11 @@ export class GitAnalyzer {
           isStale,
           commitCount,
           divergence,
-          contributors
+          contributors,
+          mergeable,
+          conflictCount,
+          commitFrequency,
+          size
         });
       } catch (error) {
         // Skip branches that can't be analyzed
@@ -127,13 +162,102 @@ export class GitAnalyzer {
     }
   }
 
-  private async getDivergence(branchName: string): Promise<{ ahead: number; behind: number }> {
+  private async getDivergence(branchName: string, defaultBranch: string): Promise<{ ahead: number; behind: number }> {
     try {
-      // This is a simplified implementation
-      // In a real implementation, you'd compare with the default branch
-      return { ahead: 0, behind: 0 };
+      if (branchName === defaultBranch) {
+        return { ahead: 0, behind: 0 };
+      }
+
+      // Get commits ahead of default branch
+      const aheadLog = await this.git.log({ from: defaultBranch, to: branchName });
+      const ahead = aheadLog.total;
+
+      // Get commits behind default branch
+      const behindLog = await this.git.log({ from: branchName, to: defaultBranch });
+      const behind = behindLog.total;
+
+      return { ahead, behind };
     } catch {
       return { ahead: 0, behind: 0 };
+    }
+  }
+
+  private async getCommitFrequency(branchName: string): Promise<CommitActivity[]> {
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const log = await this.git.log({ 
+        from: branchName,
+        since: thirtyDaysAgo.toISOString()
+      });
+
+      const activityMap = new Map<string, number>();
+      
+      for (const commit of log.all) {
+        if (commit.date) {
+          const date = new Date(commit.date).toISOString().split('T')[0];
+          if (date) {
+            activityMap.set(date, (activityMap.get(date) || 0) + 1);
+          }
+        }
+      }
+
+      return Array.from(activityMap.entries()).map(([date, count]) => ({
+        date,
+        count
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  private async checkMergeable(branchName: string, defaultBranch: string): Promise<boolean> {
+    try {
+      if (branchName === defaultBranch) {
+        return true;
+      }
+
+      // Simulate merge to check for conflicts
+      const status = await this.git.status();
+      if (!status.isClean()) {
+        return false; // Working directory not clean
+      }
+
+      // This is a simplified check - in reality you'd need more sophisticated conflict detection
+      const mergeBase = await this.git.raw(['merge-base', branchName, defaultBranch]);
+      const branchCommit = await this.git.revparse([branchName]);
+      const defaultCommit = await this.git.revparse([defaultBranch]);
+      
+      // If merge base equals one of the branches, it's a fast-forward merge
+      return mergeBase.trim() === branchCommit.trim() || mergeBase.trim() === defaultCommit.trim();
+    } catch {
+      return false;
+    }
+  }
+
+  private async getConflictCount(branchName: string, defaultBranch: string): Promise<number> {
+    try {
+      if (branchName === defaultBranch) {
+        return 0;
+      }
+
+      // Get files that differ between branches
+      const diffSummary = await this.git.diffSummary([defaultBranch, branchName]);
+      
+      // This is a simplified metric - count changed files as potential conflicts
+      return diffSummary.files.length;
+    } catch {
+      return 0;
+    }
+  }
+
+  private async getBranchSize(branchName: string): Promise<number> {
+    try {
+      const diffSummary = await this.git.diffSummary([branchName]);
+      return diffSummary.insertions + diffSummary.deletions;
+    } catch {
+      return 0;
     }
   }
 
@@ -149,7 +273,11 @@ export class GitAnalyzer {
         averageAge: 0,
         mostActive: '',
         leastActive: '',
-        totalCommits: 0
+        totalCommits: 0,
+        averageCommitsPerBranch: 0,
+        totalContributors: 0,
+        averageBranchSize: 0,
+        mostConflicted: ''
       };
     }
 
@@ -161,13 +289,68 @@ export class GitAnalyzer {
     const averageAge = totalAge / branches.length / (1000 * 60 * 60 * 24); // Convert to days
 
     const sortedByActivity = [...branches].sort((a, b) => b.commitCount - a.commitCount);
+    const sortedByConflicts = [...branches].sort((a, b) => b.conflictCount - a.conflictCount);
+    
     const totalCommits = branches.reduce((sum, branch) => sum + branch.commitCount, 0);
+    const averageCommitsPerBranch = totalCommits / branches.length;
+    
+    // Get unique contributors
+    const allContributors = new Set<string>();
+    branches.forEach(branch => {
+      branch.contributors.forEach(contributor => allContributors.add(contributor));
+    });
+    
+    const totalSize = branches.reduce((sum, branch) => sum + branch.size, 0);
+    const averageBranchSize = totalSize / branches.length;
 
     return {
       averageAge,
       mostActive: sortedByActivity[0]?.name || '',
       leastActive: sortedByActivity[sortedByActivity.length - 1]?.name || '',
-      totalCommits
+      totalCommits,
+      averageCommitsPerBranch,
+      totalContributors: allContributors.size,
+      averageBranchSize,
+      mostConflicted: sortedByConflicts[0]?.name || ''
+    };
+  }
+
+  private generateActivityOverview(branches: BranchInfo[]): AnalysisResult['activityOverview'] {
+    // Combine daily activity from all branches
+    const dailyActivityMap = new Map<string, number>();
+    const contributorMap = new Map<string, number>();
+    
+    branches.forEach(branch => {
+      branch.commitFrequency.forEach(activity => {
+        dailyActivityMap.set(activity.date, (dailyActivityMap.get(activity.date) || 0) + activity.count);
+      });
+      
+      branch.contributors.forEach(contributor => {
+        contributorMap.set(contributor, (contributorMap.get(contributor) || 0) + branch.commitCount);
+      });
+    });
+
+    const dailyActivity = Array.from(dailyActivityMap.entries())
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const topContributors = Array.from(contributorMap.entries())
+      .map(([name, commits]) => ({ name, commits }))
+      .sort((a, b) => b.commits - a.commits)
+      .slice(0, 10);
+
+    // Classify branch types
+    const branchTypes = [
+      { type: 'Active', count: branches.filter(b => !b.isStale).length },
+      { type: 'Stale', count: branches.filter(b => b.isStale).length },
+      { type: 'Mergeable', count: branches.filter(b => b.mergeable).length },
+      { type: 'Conflicted', count: branches.filter(b => b.conflictCount > 0).length }
+    ];
+
+    return {
+      dailyActivity,
+      topContributors,
+      branchTypes
     };
   }
 }

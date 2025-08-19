@@ -15,6 +15,12 @@ interface CliOptions {
   export?: string;
   ascii?: boolean;
   quiet?: boolean;
+  // Performance options
+  fast?: boolean;
+  deep?: boolean;
+  maxBranches?: number;
+  maxConcurrency?: number;
+  skipStale?: number;
 }
 
 const program = new Command();
@@ -25,15 +31,23 @@ program
   .version('1.1.0')
   .addHelpText('after', `
 Examples:
-  $ bramble analyze                    # Analyze current directory with progress indicators
-  $ bramble analyze /path/to/repo      # Analyze specific repository
-  $ bramble analyze --quiet            # Run without progress indicators (for scripts)
-  $ bramble analyze --verbose          # Show detailed progress and statistics
-  $ bramble analyze --export report.json  # Export results to file
+  $ bramble analyze                       # Analyze current directory with progress indicators
+  $ bramble analyze /path/to/repo         # Analyze specific repository
+  $ bramble analyze --quiet               # Run without progress indicators (for scripts)
+  $ bramble analyze --verbose             # Show detailed progress and statistics
+  $ bramble analyze --export report.json # Export results to file
+  
+Performance Options (for large repositories):
+  $ bramble analyze --fast                     # Fast analysis (skip expensive operations)
+  $ bramble analyze --deep                     # Deep analysis (comprehensive)
+  $ bramble analyze --max-branches 100        # Limit to 100 most recent branches
+  $ bramble analyze --skip-stale 90           # Skip branches older than 90 days
+  $ bramble analyze --max-concurrency 4       # Use 4 parallel workers
 
 Features:
   • Interactive branch visualization and statistics
   • Progress indicators for repositories with many branches
+  • Optimized parallel processing for repositories with 100+ branches
   • Export support (JSON, HTML, CSV, Markdown)
   • Terminal compatibility mode for various environments
 `);
@@ -48,6 +62,11 @@ program
   .option('-q, --quiet', 'Disable progress indicators (useful for automated scripts)')
   .option('--ascii', 'Force ASCII character mode for better terminal compatibility')
   .option('--export <filename>', 'Export results to file')
+  .option('--fast', 'Fast analysis mode (skip expensive operations like conflict detection)')
+  .option('--deep', 'Deep analysis mode (comprehensive analysis including all conflict checks)')
+  .option('--max-branches <number>', 'Limit analysis to N most recent branches', (value) => parseInt(value))
+  .option('--max-concurrency <number>', 'Number of parallel workers (default: CPU cores)', (value) => parseInt(value))
+  .option('--skip-stale <days>', 'Skip branches older than N days', (value) => parseInt(value))
   .action(async (path: string = '.', options: CliOptions) => {
     try {
       console.log(chalk.blue.bold('🌿 Bramble - Git Branch Analysis Tool'));
@@ -112,6 +131,25 @@ program
 async function runSingleAnalysis(path: string, options: CliOptions): Promise<void> {
   if (options.verbose) {
     console.log(chalk.cyan(`🔍 Analyzing repository at: ${path}`));
+    
+    // Show performance options if set
+    if (options.fast) {
+      console.log(chalk.gray('   → Fast analysis mode enabled'));
+    } else if (options.deep) {
+      console.log(chalk.gray('   → Deep analysis mode enabled'));
+    }
+    
+    if (options.maxBranches) {
+      console.log(chalk.gray(`   → Limited to ${options.maxBranches} branches`));
+    }
+    
+    if (options.skipStale) {
+      console.log(chalk.gray(`   → Skipping branches older than ${options.skipStale} days`));
+    }
+    
+    if (options.maxConcurrency) {
+      console.log(chalk.gray(`   → Using ${options.maxConcurrency} concurrent workers`));
+    }
   }
 
   // Validate repository
@@ -124,8 +162,20 @@ async function runSingleAnalysis(path: string, options: CliOptions): Promise<voi
   // Load configuration
   const config = ConfigManager.loadConfig();
   
-  // Initialize and run the application
-  const app = new BrambleApp(path, { ...options, config });
+  // Initialize and run the application with all options
+  const brambleOptions: any = { 
+    ...options, 
+    config
+  };
+  
+  // Add performance options if they are defined
+  if (options.fast !== undefined) brambleOptions.fast = options.fast;
+  if (options.deep !== undefined) brambleOptions.deep = options.deep;
+  if (options.maxBranches !== undefined) brambleOptions.maxBranches = options.maxBranches;
+  if (options.maxConcurrency !== undefined) brambleOptions.maxConcurrency = options.maxConcurrency;
+  if (options.skipStale !== undefined) brambleOptions.skipStale = options.skipStale;
+  
+  const app = new BrambleApp(path, brambleOptions);
   await app.run();
 }
 

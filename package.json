@@ -1,6 +1,6 @@
 {
   "name": "@risadams/bramble",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "description": "A terminal-based tool for advanced git branch analysis and visualization",
   "main": "dist/index.js",

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2025-08-19
+
+### Added
+
+- **Branch Type Column**: New "Type" column in branch list showing whether each branch is LOCAL or REMOTE
+- **Enhanced Repository Statistics**: Repository overview now displays separate counts for local and remote branches
+- **Better Branch Visibility**: Improved branch management with clear type identification
+
+### Fixed
+
+- **Remote Branches Configuration**: Fixed critical bug where `includeRemoteBranches` configuration option was not being respected
+- **Branch Analysis**: Remote branches are now correctly included/excluded based on user configuration settings
+- **Git Operations**: Improved handling of remote branch names and mapping between different Git reference formats
+
+### Enhanced
+
+- **UI Layout**: Adjusted branch list column widths to accommodate the new branch type information
+- **Legend**: Updated UI legend to explain LOCAL vs REMOTE branch type indicators
+- **Type Safety**: Enhanced TypeScript type definitions for better branch type handling
+
 ## [1.2.0] - 2025-08-19
 
 ### Added

@@ -1,5 +1,6 @@
 import simpleGit, { SimpleGit, BranchSummary } from 'simple-git';
 import { cpus } from 'os';
+import { ConfigManager } from '../utils/ConfigManager.js';
 
 // Import types from centralized location
 import { 
@@ -613,16 +614,56 @@ export class GitAnalyzer {
       return this.cache.get('defaultBranch');
     }
     
+    const config = ConfigManager.loadConfig();
+    
     try {
+      // First, try to get the default branch from git remote
       const result = await this.git.raw(['symbolic-ref', 'refs/remotes/origin/HEAD']);
-      const defaultBranch = result.replace('refs/remotes/origin/', '').trim();
-      this.cache.set('defaultBranch', defaultBranch);
-      return defaultBranch;
+      const remoteBranch = result.replace('refs/remotes/origin/', '').trim();
+      
+      if (remoteBranch) {
+        this.cache.set('defaultBranch', remoteBranch);
+        return remoteBranch;
+      }
     } catch {
-      const fallback = 'main';
-      this.cache.set('defaultBranch', fallback);
-      return fallback;
+      // Remote HEAD not set, continue to local detection
     }
+    
+    try {
+      // Get all local branches
+      const branches = await this.git.branch();
+      const localBranches = Object.keys(branches.branches);
+      
+      // Check configured candidates in order
+      for (const candidate of config.defaultBranchCandidates) {
+        if (localBranches.includes(candidate)) {
+          this.cache.set('defaultBranch', candidate);
+          return candidate;
+        }
+      }
+      
+      // If no configured candidates exist, use the current branch if available
+      if (branches.current) {
+        this.cache.set('defaultBranch', branches.current);
+        return branches.current;
+      }
+      
+      // If current branch is not available, use the first local branch
+      if (localBranches.length > 0) {
+        const firstBranch = localBranches[0];
+        if (firstBranch) {
+          this.cache.set('defaultBranch', firstBranch);
+          return firstBranch;
+        }
+      }
+    } catch {
+      // Fall through to final fallback
+    }
+    
+    // Final fallback: use the first configured candidate
+    const fallback = config.defaultBranchCandidates[0] || 'main';
+    this.cache.set('defaultBranch', fallback);
+    return fallback;
   }
 
   private isStale(lastActivity: Date): boolean {

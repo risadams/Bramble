@@ -4,6 +4,7 @@ export interface BrambleConfig {
   theme: 'dark' | 'light';
   maxBranches: number;
   includeRemoteBranches: boolean;
+  defaultBranchCandidates: string[];
 }
 
 export const DEFAULT_CONFIG: BrambleConfig = {
@@ -11,5 +12,6 @@ export const DEFAULT_CONFIG: BrambleConfig = {
   defaultExportFormat: 'json',
   theme: 'dark',
   maxBranches: 100,
-  includeRemoteBranches: true
+  includeRemoteBranches: true,
+  defaultBranchCandidates: ['main', 'master']
 };

@@ -1,5 +1,6 @@
 import blessed from 'blessed';
-import { AnalysisResult, BranchInfo } from '../core/GitAnalyzer.js';
+import chalk from 'chalk';
+import { AnalysisResult, BranchInfo } from '../types/analysis.js';
 import { BranchVisualizer } from './BranchVisualizer.js';
 import { TerminalCompat } from '../utils/terminalCompat.js';
 
@@ -67,6 +68,8 @@ export class BranchListView implements UIView {
   private selectedIndex = 0;
   private sortBy: 'name' | 'activity' | 'commits' | 'conflicts' = 'activity';
   private filterStale = false;
+  private scrollOffset = 0;
+  private pageSize = 20; // Number of branches to show per page
 
   render(container: blessed.Widgets.BoxElement, data: AnalysisResult): void {
     const content = this.generateBranchListContent(data);
@@ -78,17 +81,49 @@ export class BranchListView implements UIView {
     
     switch (key) {
       case 'up':
-        this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+        if (this.selectedIndex > 0) {
+          this.selectedIndex--;
+          // Scroll up if selection goes above visible area
+          if (this.selectedIndex < this.scrollOffset) {
+            this.scrollOffset = this.selectedIndex;
+          }
+        }
         return true;
       case 'down':
-        this.selectedIndex = Math.min(branches.length - 1, this.selectedIndex + 1);
+        if (this.selectedIndex < branches.length - 1) {
+          this.selectedIndex++;
+          // Scroll down if selection goes below visible area
+          if (this.selectedIndex >= this.scrollOffset + this.pageSize) {
+            this.scrollOffset = this.selectedIndex - this.pageSize + 1;
+          }
+        }
         return true;
-      case 's':
+      case 'pageup':
+        this.selectedIndex = Math.max(0, this.selectedIndex - this.pageSize);
+        this.scrollOffset = Math.max(0, this.scrollOffset - this.pageSize);
+        return true;
+      case 'pagedown':
+        this.selectedIndex = Math.min(branches.length - 1, this.selectedIndex + this.pageSize);
+        this.scrollOffset = Math.min(
+          Math.max(0, branches.length - this.pageSize),
+          this.scrollOffset + this.pageSize
+        );
+        return true;
+      case 'home':
+        this.selectedIndex = 0;
+        this.scrollOffset = 0;
+        return true;
+      case 'end':
+        this.selectedIndex = branches.length - 1;
+        this.scrollOffset = Math.max(0, branches.length - this.pageSize);
+        return true;
+      case 't':
         this.cycleSortOrder();
         return true;
       case 'f':
         this.filterStale = !this.filterStale;
         this.selectedIndex = 0;
+        this.scrollOffset = 0;
         return true;
       default:
         return false;
@@ -122,18 +157,23 @@ export class BranchListView implements UIView {
 
   private generateBranchListContent(data: AnalysisResult): string {
     const branches = this.getSortedBranches(data.branches);
+    const visibleBranches = branches.slice(this.scrollOffset, this.scrollOffset + this.pageSize);
+    
     const header = `
 📋 Branch List (Sorted by ${this.sortBy}${this.filterStale ? ', Stale Only' : ''})
 ${'='.repeat(60)}
 
-Controls: ↑/↓ Navigate | s: Sort | f: Filter Stale | Enter: Details
+Controls: ↑/↓ Navigate | t: Sort | f: Filter Stale | PgUp/PgDn: Page | Home/End
+
+Showing ${this.scrollOffset + 1}-${Math.min(this.scrollOffset + this.pageSize, branches.length)} of ${branches.length} branches
 
 ${'Sel'.padEnd(3)} ${'Cur'.padEnd(3)} ${'Status'.padEnd(6)} ${'Branch Name'.padEnd(25)} ${'Age'.padEnd(5)} ${'Commits'.padEnd(7)} ${'Merge'}
 ${'---'.padEnd(3)} ${'---'.padEnd(3)} ${'------'.padEnd(6)} ${'-'.repeat(25)} ${'-----'.padEnd(5)} ${'-------'.padEnd(7)} ${'-----'}
 `;
 
-    const branchLines = branches.map((branch, index) => {
-      const isSelected = index === this.selectedIndex;
+    const branchLines = visibleBranches.map((branch, displayIndex) => {
+      const actualIndex = this.scrollOffset + displayIndex;
+      const isSelected = actualIndex === this.selectedIndex;
       const prefix = isSelected ? '►' : ' ';
       const current = branch.current ? '*' : ' ';
       const stale = branch.isStale ? '🚨' : '✅';

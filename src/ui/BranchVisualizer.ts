@@ -1,4 +1,4 @@
-import { BranchInfo, AnalysisResult } from '../core/GitAnalyzer.js';
+import { BranchInfo, AnalysisResult } from '../types/analysis.js';
 import { TerminalCompat } from '../utils/terminalCompat.js';
 
 export interface TreeNode {

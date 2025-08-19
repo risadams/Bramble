@@ -1,5 +1,5 @@
 import blessed from 'blessed';
-import { AnalysisResult } from '../core/GitAnalyzer.js';
+import { AnalysisResult } from '../types/analysis.js';
 import { TerminalCompat } from '../utils/terminalCompat.js';
 import { 
   ViewType, 
@@ -148,7 +148,7 @@ export class TerminalUI {
     
     switch (this.currentView) {
       case ViewType.BRANCH_LIST:
-        return ` ${baseControls} | ↑/↓: Navigate | s: Sort | f: Filter`;
+        return ` ${baseControls} | ↑/↓: Navigate | t: Sort | f: Filter | PgUp/PgDn: Page`;
       case ViewType.VISUALIZATIONS:
         return ` ${baseControls} | t: Tree | h: Heatmap | r: Relationships | d: Dashboard`;
       default:
@@ -187,13 +187,28 @@ export class TerminalUI {
       this.switchView(ViewType.VISUALIZATIONS, analysisResult);
     });
 
-    // Handle view-specific key events
+    // Handle view-specific key events first
     this.screen.on('keypress', (ch, key) => {
       const currentViewHandler = this.views.get(this.currentView);
       if (currentViewHandler && currentViewHandler.handleKeypress(key.name, analysisResult)) {
         this.renderCurrentView(analysisResult);
         this.updateNavigation();
         this.screen?.render();
+        return; // Prevent further handling if view consumed the event
+      }
+      
+      // Handle scrolling for branch list view when not handled by view
+      if (this.currentView === ViewType.BRANCH_LIST && this.content) {
+        switch (key.name) {
+          case 'pageup':
+            this.content.scroll(-10);
+            this.screen?.render();
+            return;
+          case 'pagedown':
+            this.content.scroll(10);
+            this.screen?.render();
+            return;
+        }
       }
     });
   }

@@ -1,4 +1,4 @@
-import { AnalysisResult } from '../core/GitAnalyzer.js';
+import { AnalysisResult } from '../types/analysis.js';
 
 export interface ExportOptions {
   format: 'json' | 'html' | 'csv' | 'markdown';

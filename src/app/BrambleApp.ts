@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { GitAnalyzer, ProgressCallback } from '../core/GitAnalyzer.js';
-import { GitAnalyzerOptimizedV2, OptimizedAnalysisOptions } from '../core/GitAnalyzerOptimizedV2.js';
+import { ProgressCallback } from '../types/analysis.js';
+import { GitAnalyzer, OptimizedAnalysisOptions } from '../core/GitAnalyzer.js';
 import { TerminalUI } from '../ui/TerminalUI.js';
 import { ExportService } from '../services/ExportService.js';
 import { BrambleConfig } from '../types/config.js';
@@ -23,7 +23,6 @@ interface BrambleOptions {
 
 export class BrambleApp {
   private gitAnalyzer: GitAnalyzer;
-  private gitAnalyzerOptimized: GitAnalyzerOptimizedV2;
   private ui: TerminalUI;
   private exportService: ExportService;
   private options: BrambleOptions;
@@ -31,7 +30,6 @@ export class BrambleApp {
   constructor(private repositoryPath: string, options: BrambleOptions = {}) {
     this.options = options;
     this.gitAnalyzer = new GitAnalyzer(repositoryPath);
-    this.gitAnalyzerOptimized = new GitAnalyzerOptimizedV2(repositoryPath);
     this.ui = new TerminalUI();
     this.exportService = new ExportService();
   }
@@ -41,11 +39,10 @@ export class BrambleApp {
       // Show progress indicators only if not in quiet mode
       const showProgress = !this.options.quiet;
       
-      // Determine analysis mode and options
-      const useOptimized = this.shouldUseOptimizedAnalyzer();
+      // Get analysis options
       const analysisOptions = this.getAnalysisOptions();
       
-      if (this.options.verbose && useOptimized) {
+      if (this.options.verbose) {
         console.log(chalk.blue(`🚀 Using optimized analysis mode: ${analysisOptions.analysisDepth}`));
         if (analysisOptions.maxBranches && analysisOptions.maxBranches < Infinity) {
           console.log(chalk.gray(`   → Limited to ${analysisOptions.maxBranches} most recent branches`));
@@ -115,10 +112,11 @@ export class BrambleApp {
         }
       };
 
-      // Perform analysis with appropriate analyzer
-      const analysisResult = useOptimized 
-        ? await this.gitAnalyzerOptimized.analyze(showProgress ? progressCallback : undefined, analysisOptions)
-        : await this.gitAnalyzer.analyze(showProgress ? progressCallback : undefined);
+      // Perform analysis with optimized analyzer
+      const analysisResult = await this.gitAnalyzer.analyze(
+        showProgress ? progressCallback : undefined, 
+        analysisOptions
+      );
       
       // Complete progress indicators
       if (showProgress) {
@@ -164,19 +162,6 @@ export class BrambleApp {
     });
 
     console.log(chalk.green(`📄 Results exported to: ${this.options.export}`));
-  }
-
-  private shouldUseOptimizedAnalyzer(): boolean {
-    // Use optimized analyzer for:
-    // 1. When explicitly requested via fast/deep modes
-    // 2. When performance options are set
-    // 3. Always use it for better performance unless legacy mode is forced
-    return this.options.fast || 
-           this.options.deep || 
-           this.options.maxBranches !== undefined ||
-           this.options.maxConcurrency !== undefined ||
-           this.options.skipStale !== undefined ||
-           true; // Default to optimized
   }
 
   private getAnalysisOptions(): OptimizedAnalysisOptions {

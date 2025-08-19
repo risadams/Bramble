@@ -50,6 +50,10 @@ export interface AnalysisResult {
   };
 }
 
+export interface ProgressCallback {
+  (current: number, total: number, message?: string): void;
+}
+
 export class GitAnalyzer {
   private git: SimpleGit;
 
@@ -57,20 +61,27 @@ export class GitAnalyzer {
     this.git = simpleGit(repositoryPath);
   }
 
-  public async analyze(): Promise<AnalysisResult> {
+  public async analyze(progressCallback?: ProgressCallback): Promise<AnalysisResult> {
     try {
+      progressCallback?.(0, 4, 'Getting branch information...');
+      
       // Get branch information
       const branches = await this.git.branch();
-      const branchInfos = await this.analyzeBranches(branches);
+      progressCallback?.(1, 4, 'Analyzing branches...');
+      
+      const branchInfos = await this.analyzeBranches(branches, progressCallback);
+      progressCallback?.(2, 4, 'Calculating statistics...');
       
       // Calculate statistics
       const statistics = this.calculateStatistics(branchInfos);
+      progressCallback?.(3, 4, 'Generating activity overview...');
       
       // Generate activity overview
       const activityOverview = this.generateActivityOverview(branchInfos);
       
       // Get repository info
       const defaultBranch = await this.getDefaultBranch();
+      progressCallback?.(4, 4, 'Analysis complete!');
       
       return {
         repository: {
@@ -90,13 +101,21 @@ export class GitAnalyzer {
     }
   }
 
-  private async analyzeBranches(branches: BranchSummary): Promise<BranchInfo[]> {
+  private async analyzeBranches(branches: BranchSummary, progressCallback?: ProgressCallback): Promise<BranchInfo[]> {
     const branchInfos: BranchInfo[] = [];
     const defaultBranch = await this.getDefaultBranch();
+    const branchNames = Object.keys(branches.branches);
+    const totalBranches = branchNames.length;
     
-    for (const branchName of Object.keys(branches.branches)) {
+    for (let i = 0; i < branchNames.length; i++) {
+      const branchName = branchNames[i];
+      if (!branchName) continue;
+      
       const branch = branches.branches[branchName];
       if (!branch) continue;
+
+      // Report progress for branch analysis
+      progressCallback?.(i + 1, totalBranches, `Analyzing branch: ${branchName}`);
 
       try {
         const log = await this.git.log({ from: branch.commit, maxCount: 1 });

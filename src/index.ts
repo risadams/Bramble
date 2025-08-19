@@ -14,6 +14,7 @@ interface CliOptions {
   config?: boolean;
   export?: string;
   ascii?: boolean;
+  quiet?: boolean;
 }
 
 const program = new Command();
@@ -21,7 +22,21 @@ const program = new Command();
 program
   .name('bramble')
   .description('Terminal-based tool for advanced git branch analysis and visualization')
-  .version('1.0.0');
+  .version('1.1.0')
+  .addHelpText('after', `
+Examples:
+  $ bramble analyze                    # Analyze current directory with progress indicators
+  $ bramble analyze /path/to/repo      # Analyze specific repository
+  $ bramble analyze --quiet            # Run without progress indicators (for scripts)
+  $ bramble analyze --verbose          # Show detailed progress and statistics
+  $ bramble analyze --export report.json  # Export results to file
+
+Features:
+  • Interactive branch visualization and statistics
+  • Progress indicators for repositories with many branches
+  • Export support (JSON, HTML, CSV, Markdown)
+  • Terminal compatibility mode for various environments
+`);
 
 // Main analysis command
 program
@@ -30,6 +45,7 @@ program
   .option('-b, --batch', 'Enable batch mode for multiple repositories')
   .option('-o, --output <format>', 'Export format (json|html|csv|markdown)')
   .option('-v, --verbose', 'Enable verbose logging')
+  .option('-q, --quiet', 'Disable progress indicators (useful for automated scripts)')
   .option('--ascii', 'Force ASCII character mode for better terminal compatibility')
   .option('--export <filename>', 'Export results to file')
   .action(async (path: string = '.', options: CliOptions) => {

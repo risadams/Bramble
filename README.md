@@ -12,8 +12,10 @@ A terminal-based tool for advanced git branch analysis and visualization, provid
 - 📊 **Visual Statistics**: Interactive terminal dashboard with branch metrics
 - 🔍 **Stale Branch Detection**: Identify abandoned or inactive branches
 - 📈 **Activity Tracking**: Monitor commit patterns and contributor activity
+- ⏳ **Progress Indicators**: Real-time progress tracking with ETA for large repositories
 - 📋 **Export Capabilities**: Generate reports in JSON, HTML, CSV, and Markdown formats
 - ⚡ **Fast Performance**: Handles repositories with 100+ branches efficiently
+- 🤖 **Script-Friendly**: Quiet mode for automated workflows and CI/CD integration
 
 ## Installation
 
@@ -67,6 +69,7 @@ npx @risadams/bramble analyze . --export report.md # Export to file
 # Display options
 npx @risadams/bramble analyze . --ascii           # ASCII mode for compatibility
 npx @risadams/bramble analyze . -v                # Verbose output
+npx @risadams/bramble analyze . --quiet           # Disable progress indicators (scripts/CI)
 
 # Batch processing
 npx @risadams/bramble analyze . --batch           # Batch mode for multiple repos
@@ -146,6 +149,36 @@ npm run test       # Run tests
 npm run lint       # Lint code
 ```
 
+## Progress Indicators
+
+Bramble provides real-time feedback during analysis, especially useful for repositories with many branches:
+
+### Features
+- **Visual Progress Bars**: Show completion percentage and current progress
+- **ETA Calculation**: Estimates time remaining for repositories with >10 branches  
+- **Branch-by-Branch Progress**: Displays which branch is currently being analyzed
+- **Initialization Spinner**: Animated feedback during repository setup
+
+### Examples
+
+**Normal Mode** (default):
+```
+🌿 Bramble - Git Branch Analysis Tool
+Repository analysis: [████████████████████████████████████████] (4/4) - Repository metadata collected
+
+Analyzing 25 branches: [████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 32.0% (8/25) ETA: 12s - feature/user-auth
+```
+
+**Quiet Mode** (for scripts):
+```bash
+npx @risadams/bramble analyze . --quiet
+```
+
+**Verbose Mode** (detailed output):
+```bash
+npx @risadams/bramble analyze . --verbose
+```
+
 ## Configuration
 
 Create a `.bramblerc` file in your home directory for custom settings:
@@ -181,8 +214,16 @@ MIT License - see LICENSE file for details
 
 ## Roadmap
 
+### ✅ Completed (v1.1.0)
+- [x] Progress indicators with ETA calculation
+- [x] Quiet mode for automated scripts and CI/CD
+- [x] Enhanced user experience with real-time feedback
+
+### 🚀 Upcoming Features
 - [ ] Advanced branch comparison features
 - [ ] Integration with GitHub/GitLab APIs
 - [ ] Custom analysis rules and filters
 - [ ] Performance optimizations for large repositories
 - [ ] Plugin system for extensibility
+- [ ] Branch dependency visualization
+- [ ] Automated stale branch cleanup suggestions

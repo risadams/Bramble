@@ -60,7 +60,7 @@ export class GitAnalyzer {
       
       // Phase 2: Filter and prioritize branches
       progressCallback?.(2, 5, 'Filtering and prioritizing branches...');
-      const filteredBranches = this.filterBranches(bulkBranchData, maxBranches, skipStalerThan);
+      const filteredBranches = await this.filterBranches(bulkBranchData, maxBranches, skipStalerThan);
       
       if (filteredBranches.length === 0) {
         throw new Error('No branches found or all branches filtered out');
@@ -118,6 +118,17 @@ export class GitAnalyzer {
       const branches = await this.git.branch();
       const branchNames = Object.keys(branches.branches);
       
+      // Ensure the current branch is included (sometimes it's missing from branches.branches)
+      if (branches.current && !branchNames.includes(branches.current)) {
+        branchNames.push(branches.current);
+      }
+      
+      // Ensure the default branch is included
+      const defaultBranch = await this.getDefaultBranch();
+      if (!branchNames.includes(defaultBranch)) {
+        branchNames.push(defaultBranch);
+      }
+      
       // Get bulk commit information using git for-each-ref
       const forEachRefOutput = await this.git.raw([
         'for-each-ref',
@@ -145,6 +156,18 @@ export class GitAnalyzer {
       return branchNames.map(branchName => {
         const branch = branches.branches[branchName];
         const refInfo = refData.get(branchName);
+        
+        // For branches not in branches.branches (like current branch), create minimal info
+        if (!branch && refInfo) {
+          return {
+            name: branchName,
+            commit: refInfo.commit,
+            current: branchName === branches.current,
+            lastCommitDate: refInfo.date,
+            commitCount: commitCounts.get(branchName) || 0,
+            mergedIntoDefault: mergedBranches.has(branchName)
+          } as BatchBranchData;
+        }
         
         if (!branch || !refInfo) return null;
 
@@ -222,26 +245,38 @@ export class GitAnalyzer {
   /**
    * Filter branches based on criteria to reduce analysis load
    */
-  private filterBranches(
+  private async filterBranches(
     branches: BatchBranchData[],
     maxBranches: number,
     skipStalerThan: number
-  ): BatchBranchData[] {
+  ): Promise<BatchBranchData[]> {
     let filtered = [...branches];
+    const defaultBranch = await this.getDefaultBranch();
 
-    // Filter by staleness
+    // Filter by staleness, but never filter out the default branch or current branch
     if (skipStalerThan < Infinity) {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - skipStalerThan);
       
       filtered = filtered.filter(branch => {
+        // Always include default branch and current branch
+        if (branch.name === defaultBranch || branch.current) {
+          return true;
+        }
+        
         if (!branch.lastCommitDate) return true;
         return new Date(branch.lastCommitDate) > cutoffDate;
       });
     }
 
-    // Sort by activity (most recent first) and limit
+    // Sort by activity (most recent first), but keep default branch at top if it exists
     filtered.sort((a, b) => {
+      // Always prioritize default branch and current branch
+      if (a.name === defaultBranch) return -1;
+      if (b.name === defaultBranch) return 1;
+      if (a.current) return -1;
+      if (b.current) return 1;
+      
       const dateA = a.lastCommitDate ? new Date(a.lastCommitDate) : new Date(0);
       const dateB = b.lastCommitDate ? new Date(b.lastCommitDate) : new Date(0);
       return dateB.getTime() - dateA.getTime();

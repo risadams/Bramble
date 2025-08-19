@@ -176,20 +176,32 @@ ${'---'.padEnd(3)} ${'---'.padEnd(3)} ${'------'.padEnd(6)} ${'-'.repeat(25)} ${
       const isSelected = actualIndex === this.selectedIndex;
       const prefix = isSelected ? '►' : ' ';
       const current = branch.current ? '*' : ' ';
-      const stale = branch.isStale ? '🚨' : '✅';
-      const mergeable = branch.mergeable ? '✅' : '❌';
+      
+      // Create a cleaner status indicator using simple characters
+      let status = '';
+      if (branch.isStale) {
+        status = 'STALE ';
+      } else if (branch.conflictCount > 0) {
+        status = 'CONFCT';
+      } else {
+        status = 'ACTIVE';
+      }
+      
+      const mergeable = branch.mergeable ? '✓' : '✗';
       
       const age = Math.floor((Date.now() - branch.lastActivity.getTime()) / (1000 * 60 * 60 * 24));
       const branchName = branch.name.length > 24 ? branch.name.substring(0, 21) + '...' : branch.name;
       const ageStr = `${age}d`;
       
-      return `${prefix.padEnd(3)} ${current.padEnd(3)} ${stale.padEnd(6)} ${branchName.padEnd(25)} ${ageStr.padEnd(5)} ${branch.commitCount.toString().padEnd(7)} ${mergeable}`;
+      return `${prefix.padEnd(3)} ${current.padEnd(3)} ${status.padEnd(6)} ${branchName.padEnd(25)} ${ageStr.padEnd(5)} ${branch.commitCount.toString().padEnd(7)} ${mergeable}`;
     });
 
     const legend = `
 
 Legend:
-  ► = Selected  * = Current  🚨 = Stale  ✅ = Active/Mergeable  ❌ = Conflicts
+  ► = Selected  * = Current Branch  
+  Status: ACTIVE = Normal branch, STALE = No recent activity, CONFCT = Has conflicts
+  Merge: ✓ = Mergeable, ✗ = Has conflicts
 `;
 
     return header + branchLines.join('\n') + legend;

@@ -1,6 +1,7 @@
 import blessed from 'blessed';
 import { AnalysisResult, BranchInfo } from '../core/GitAnalyzer.js';
 import { BranchVisualizer } from './BranchVisualizer.js';
+import { TerminalCompat } from '../utils/terminalCompat.js';
 
 export enum ViewType {
   OVERVIEW = 'overview',
@@ -56,7 +57,7 @@ ${data.activityOverview.topContributors.slice(0, 5).map(c =>
 
 📋 Recent Activity (Last 7 days):
 ${data.activityOverview.dailyActivity.slice(-7).map(a => 
-  `${a.date}: ${'█'.repeat(Math.min(a.count, 20))} (${a.count})`
+  `${a.date}: ${TerminalCompat.getCharset().blockFull.repeat(Math.min(a.count, 20))} (${a.count})`
 ).join('\n')}
     `;
   }
@@ -127,26 +128,31 @@ ${'='.repeat(60)}
 
 Controls: ↑/↓ Navigate | s: Sort | f: Filter Stale | Enter: Details
 
+${'Sel'.padEnd(3)} ${'Cur'.padEnd(3)} ${'Status'.padEnd(6)} ${'Branch Name'.padEnd(25)} ${'Age'.padEnd(5)} ${'Commits'.padEnd(7)} ${'Merge'}
+${'---'.padEnd(3)} ${'---'.padEnd(3)} ${'------'.padEnd(6)} ${'-'.repeat(25)} ${'-----'.padEnd(5)} ${'-------'.padEnd(7)} ${'-----'}
 `;
 
     const branchLines = branches.map((branch, index) => {
       const isSelected = index === this.selectedIndex;
-      const prefix = isSelected ? '► ' : '  ';
+      const prefix = isSelected ? '►' : ' ';
       const current = branch.current ? '*' : ' ';
       const stale = branch.isStale ? '🚨' : '✅';
       const mergeable = branch.mergeable ? '✅' : '❌';
       
       const age = Math.floor((Date.now() - branch.lastActivity.getTime()) / (1000 * 60 * 60 * 24));
+      const branchName = branch.name.length > 24 ? branch.name.substring(0, 21) + '...' : branch.name;
+      const ageStr = `${age}d`;
       
-      return `${prefix}${current} ${stale} ${branch.name.padEnd(25)} ${age.toString().padStart(3)}d ${branch.commitCount.toString().padStart(4)} ${mergeable}`;
+      return `${prefix.padEnd(3)} ${current.padEnd(3)} ${stale.padEnd(6)} ${branchName.padEnd(25)} ${ageStr.padEnd(5)} ${branch.commitCount.toString().padEnd(7)} ${mergeable}`;
     });
 
     const legend = `
-Legend: * = Current | 🚨 = Stale | ✅ = Active/Mergeable | ❌ = Conflicts
-Format: [Current] [Status] [Name] [Age] [Commits] [Mergeable]
+
+Legend:
+  ► = Selected  * = Current  🚨 = Stale  ✅ = Active/Mergeable  ❌ = Conflicts
 `;
 
-    return header + branchLines.join('\n') + '\n' + legend;
+    return header + branchLines.join('\n') + legend;
   }
 }
 
@@ -217,12 +223,13 @@ Daily Commit Activity:
 ${'Date'.padEnd(12)} ${'Activity'.padEnd(25)} Count
 
 ${data.activityOverview.dailyActivity.slice(-30).map(activity => {
-  const bars = '█'.repeat(Math.floor(activity.count / scale));
+  const charset = TerminalCompat.getCharset();
+  const bars = charset.blockFull.repeat(Math.floor(activity.count / scale));
   const dots = '.'.repeat(Math.max(0, 20 - bars.length));
   return `${activity.date} ${bars}${dots} ${activity.count}`;
 }).join('\n')}
 
-Scale: Each █ represents ${scale} commit(s)
+Scale: Each ${TerminalCompat.getCharset().blockFull} represents ${scale} commit(s)
 
 Weekly Summary:
 ${this.generateWeeklySummary(data.activityOverview.dailyActivity)}
@@ -232,7 +239,8 @@ ${data.activityOverview.topContributors.slice(0, 8).map(contributor => {
   const percentage = ((contributor.commits / data.statistics.totalCommits) * 100).toFixed(1);
   const maxContributorCommits = data.activityOverview.topContributors[0]?.commits || 1;
   const barLength = Math.floor((contributor.commits / maxContributorCommits) * 15);
-  const bar = '█'.repeat(barLength) + '░'.repeat(15 - barLength);
+  const charset = TerminalCompat.getCharset();
+  const bar = charset.blockFull.repeat(barLength) + charset.blockEmpty.repeat(15 - barLength);
   return `${contributor.name.padEnd(20)} ${bar} ${percentage}%`;
 }).join('\n')}
     `;

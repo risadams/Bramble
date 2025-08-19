@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { BrambleApp } from './app/BrambleApp.js';
 import { validateRepository } from './utils/validation.js';
 import { ConfigManager } from './utils/ConfigManager.js';
+import { TerminalCompat } from './utils/terminalCompat.js';
 
 interface CliOptions {
   batch?: boolean;
@@ -12,6 +13,7 @@ interface CliOptions {
   verbose?: boolean;
   config?: boolean;
   export?: string;
+  ascii?: boolean;
 }
 
 const program = new Command();
@@ -28,10 +30,17 @@ program
   .option('-b, --batch', 'Enable batch mode for multiple repositories')
   .option('-o, --output <format>', 'Export format (json|html|csv|markdown)')
   .option('-v, --verbose', 'Enable verbose logging')
+  .option('--ascii', 'Force ASCII character mode for better terminal compatibility')
   .option('--export <filename>', 'Export results to file')
   .action(async (path: string = '.', options: CliOptions) => {
     try {
       console.log(chalk.blue.bold('🌿 Bramble - Git Branch Analysis Tool'));
+      
+      // Set terminal compatibility mode
+      if (options.ascii) {
+        TerminalCompat.setAsciiMode();
+        console.log(chalk.yellow('📟 ASCII mode enabled for terminal compatibility'));
+      }
       
       if (options.batch) {
         await runBatchMode(path, options);

@@ -1,5 +1,6 @@
 import blessed from 'blessed';
 import { AnalysisResult } from '../core/GitAnalyzer.js';
+import { TerminalCompat } from '../utils/terminalCompat.js';
 import { 
   ViewType, 
   UIView, 
@@ -31,11 +32,14 @@ export class TerminalUI {
   }
 
   public async start(analysisResult: AnalysisResult): Promise<void> {
+    // Initialize terminal compatibility
+    TerminalCompat.detectAndSetCharset();
+    
     // Create blessed screen
     this.screen = blessed.screen({
       smartCSR: true,
       title: 'Bramble - Git Branch Analysis',
-      fullUnicode: true
+      fullUnicode: !TerminalCompat.isCompatibilityMode()
     });
 
     // Create main layout
@@ -87,16 +91,25 @@ export class TerminalUI {
     this.content = blessed.box({
       parent: this.screen,
       top: 5,
-      left: 0,
-      width: '100%',
-      height: '100%-8',
+      left: 1,
+      width: '100%-2',
+      height: '100%-9',
       scrollable: true,
       alwaysScroll: true,
       keys: true,
       vi: true,
+      wrap: false,
+      tags: false,
+      padding: {
+        left: 1,
+        right: 1
+      },
       style: {
         bg: 'black',
         fg: 'white'
+      },
+      border: {
+        type: 'line'
       }
     });
 

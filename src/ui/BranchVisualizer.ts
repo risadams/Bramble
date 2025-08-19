@@ -1,4 +1,5 @@
 import { BranchInfo, AnalysisResult } from '../core/GitAnalyzer.js';
+import { TerminalCompat } from '../utils/terminalCompat.js';
 
 export interface TreeNode {
   name: string;
@@ -78,13 +79,17 @@ export class BranchVisualizer {
 
     const renderNode = (node: TreeNode, prefix: string = '', isLast: boolean = true): string => {
       let output = '';
-      const connector = isLast ? '└── ' : '├── ';
+      const connector = isLast ? 
+        TerminalCompat.getCharset().treeEnd : 
+        TerminalCompat.getCharset().treeBranch;
       const status = this.getBranchStatus(node.branch);
       const age = Math.floor((Date.now() - node.branch.lastActivity.getTime()) / (1000 * 60 * 60 * 24));
       
       output += `${prefix}${connector}${status} ${node.name} (${age}d, ${node.branch.commitCount} commits)\n`;
       
-      const childPrefix = prefix + (isLast ? '    ' : '│   ');
+      const childPrefix = prefix + (isLast ? 
+        TerminalCompat.getCharset().treeSpace : 
+        TerminalCompat.getCharset().treeVertical);
       for (let i = 0; i < node.children.length; i++) {
         const child = node.children[i];
         if (child) {
@@ -182,10 +187,11 @@ export class BranchVisualizer {
   }
 
   private static getIntensityChar(activity: number, scale: number): string {
-    if (activity === 0) return '░';
-    if (activity <= scale) return '▒';
-    if (activity <= scale * 2) return '▓';
-    return '█';
+    const charset = TerminalCompat.getCharset();
+    if (activity === 0) return charset.blockEmpty;
+    if (activity <= scale) return charset.blockQuarter;
+    if (activity <= scale * 2) return charset.blockHalf;
+    return charset.blockFull;
   }
 
   private static analyzeRelationships(branches: BranchInfo[], defaultBranch: string): Array<{from: string, to: string, type: string}> {
@@ -239,7 +245,7 @@ export class BranchVisualizer {
       result += `${symbol} ${type.toUpperCase()} BRANCHES:\n`;
       
       for (const rel of rels) {
-        result += `  ${rel.from} ──→ ${rel.to}\n`;
+        result += `  ${rel.from} ${TerminalCompat.getCharset().arrow} ${rel.to}\n`;
       }
       result += '\n';
     }
@@ -266,10 +272,11 @@ export class BranchVisualizer {
     const active = total - analysisResult.repository.staleBranches;
     const stale = analysisResult.repository.staleBranches;
     const mergeable = analysisResult.repository.mergeableBranches;
+    const charset = TerminalCompat.getCharset();
     
-    result += `Active:    ${'█'.repeat(Math.floor((active / total) * 20))} ${active}\n`;
-    result += `Stale:     ${'█'.repeat(Math.floor((stale / total) * 20))} ${stale}\n`;
-    result += `Mergeable: ${'█'.repeat(Math.floor((mergeable / total) * 20))} ${mergeable}\n\n`;
+    result += `Active:    ${charset.blockFull.repeat(Math.floor((active / total) * 20))} ${active}\n`;
+    result += `Stale:     ${charset.blockFull.repeat(Math.floor((stale / total) * 20))} ${stale}\n`;
+    result += `Mergeable: ${charset.blockFull.repeat(Math.floor((mergeable / total) * 20))} ${mergeable}\n\n`;
 
     // Commit activity trend
     result += 'Recent Activity Trend:\n';
@@ -278,7 +285,7 @@ export class BranchVisualizer {
     
     for (const activity of recentActivity) {
       const barLength = Math.floor((activity.count / maxRecentActivity) * 15);
-      const bar = '█'.repeat(barLength) + '░'.repeat(15 - barLength);
+      const bar = charset.blockFull.repeat(barLength) + charset.blockEmpty.repeat(15 - barLength);
       result += `${activity.date}: ${bar} ${activity.count}\n`;
     }
 

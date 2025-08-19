@@ -17,23 +17,59 @@ A terminal-based tool for advanced git branch analysis and visualization, provid
 
 ## Installation
 
+### Option 1: Using npx (Recommended)
+
 ```bash
-npm install -g bramble
+# Run directly without installation
+npx @risadams/bramble analyze .
+npx @risadams/bramble analyze /path/to/repo
+```
+
+### Option 2: Global Installation
+
+```bash
+npm install -g @risadams/bramble
+bramble analyze .
+```
+
+### Option 3: Local Development
+
+```bash
+git clone https://github.com/risadams/bramble.git
+cd bramble
+npm install
+npm run build
+npm start analyze .
 ```
 
 ## Usage
 
 ### Basic Analysis
+
 ```bash
-bramble                    # Analyze current directory
-bramble /path/to/repo     # Analyze specific repository
+# Using npx (no installation required)
+npx @risadams/bramble analyze .
+npx @risadams/bramble analyze /path/to/repo
+
+# Using global installation
+bramble analyze .
+bramble analyze /path/to/repo
 ```
 
 ### Advanced Options
+
 ```bash
-bramble -v                 # Verbose output
-bramble -o html           # Export to HTML format
-bramble --batch           # Batch mode for multiple repositories
+# Output options
+npx @risadams/bramble analyze . -o html           # Export to HTML
+npx @risadams/bramble analyze . -o json           # Export to JSON
+npx @risadams/bramble analyze . --export report.md # Export to file
+
+# Display options
+npx @risadams/bramble analyze . --ascii           # ASCII mode for compatibility
+npx @risadams/bramble analyze . -v                # Verbose output
+
+# Batch processing
+npx @risadams/bramble analyze . --batch           # Batch mode for multiple repos
 ```
 
 ## Interactive Interface
@@ -46,18 +82,53 @@ Once launched, Bramble provides an interactive terminal interface with:
 - **Export Options**: Generate reports for sharing or archival
 
 ### Keyboard Shortcuts
+
 - `q` or `Esc` - Quit application
 - `b` - Browse branches
 - `s` - View statistics
 - `e` - Export options
 
+## Terminal Compatibility
+
+Bramble automatically detects your terminal capabilities and adjusts the character set accordingly. However, if you experience display issues with special characters (box drawing, progress bars), you can force ASCII mode:
+
+```bash
+# Force ASCII mode for maximum compatibility
+bramble analyze . --ascii
+```
+
+### Common Display Issues
+
+**Windows Command Prompt/PowerShell**:
+
+- Box drawing characters may appear as question marks or squares
+- Progress bars may show incorrectly
+- **Solution**: Use `--ascii` flag or switch to Windows Terminal
+
+**Font Issues**:
+
+- Ensure your terminal uses a font that supports Unicode box drawing characters
+- Recommended fonts: Consolas, Fira Code, JetBrains Mono, Cascadia Code
+
+**VS Code Integrated Terminal**:
+
+- Usually displays Unicode characters correctly
+- If issues persist, check terminal font settings
+
+### Supported Character Sets
+
+- **Unicode Mode** (default): Rich visual experience with box drawing and block characters
+- **ASCII Mode** (`--ascii`): Maximum compatibility using basic ASCII characters only
+
 ## Development
 
 ### Prerequisites
+
 - Node.js 18+
 - Git repository access
 
 ### Setup
+
 ```bash
 git clone <repository-url>
 cd bramble
@@ -66,6 +137,7 @@ npm run build
 ```
 
 ### Scripts
+
 ```bash
 npm run dev        # Development mode with ts-node
 npm run build      # Compile TypeScript

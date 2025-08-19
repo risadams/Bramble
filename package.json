@@ -1,5 +1,5 @@
 {
-  "name": "bramble",
+  "name": "@risadams/bramble",
   "version": "1.0.0",
   "type": "module",
   "description": "A terminal-based tool for advanced git branch analysis and visualization",
@@ -7,6 +7,11 @@
   "bin": {
     "bramble": "dist/index.js"
   },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
@@ -25,8 +30,16 @@
     "cli",
     "visualization"
   ],
-  "author": "Your Name",
+  "author": "risadams",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/risadams/bramble.git"
+  },
+  "homepage": "https://github.com/risadams/bramble#readme",
+  "bugs": {
+    "url": "https://github.com/risadams/bramble/issues"
+  },
   "engines": {
     "node": ">=18.0.0"
   },

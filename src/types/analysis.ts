@@ -3,6 +3,8 @@ export interface CommitActivity {
   count: number;
 }
 
+export type BranchType = 'local' | 'remote' | 'both';
+
 export interface BranchInfo {
   name: string;
   current: boolean;
@@ -11,6 +13,7 @@ export interface BranchInfo {
   lastCommitAuthor: string;
   isStale: boolean;
   commitCount: number;
+  branchType: BranchType;
   divergence: {
     ahead: number;
     behind: number;
@@ -27,6 +30,8 @@ export interface AnalysisResult {
     path: string;
     defaultBranch: string;
     totalBranches: number;
+    localBranches: number;
+    remoteBranches: number;
     staleBranches: number;
     mergeableBranches: number;
     conflictedBranches: number;

@@ -36,6 +36,8 @@ export class OverviewView implements UIView {
 Path: ${data.repository.path}
 Default Branch: ${data.repository.defaultBranch}
 Total Branches: ${data.repository.totalBranches}
+- Local Branches: ${data.repository.localBranches}
+- Remote Branches: ${data.repository.remoteBranches}
 
 Branch Health:
 - Active Branches: ${data.repository.totalBranches - data.repository.staleBranches}
@@ -161,14 +163,14 @@ export class BranchListView implements UIView {
     
     const header = `
 📋 Branch List (Sorted by ${this.sortBy}${this.filterStale ? ', Stale Only' : ''})
-${'='.repeat(100)}
+${'='.repeat(110)}
 
 Controls: ↑/↓ Navigate | t: Sort | f: Filter Stale | PgUp/PgDn: Page | Home/End
 
 Showing ${this.scrollOffset + 1}-${Math.min(this.scrollOffset + this.pageSize, branches.length)} of ${branches.length} branches
 
-${'Sel'.padEnd(3)} ${'Cur'.padEnd(3)} ${'Status'.padEnd(6)} ${'Branch Name'.padEnd(25)} ${'Age'.padEnd(5)} ${'Commits'.padEnd(7)} ${'Last Commit'.padEnd(16)} ${'Author'.padEnd(15)} ${'Merge'}
-${'---'.padEnd(3)} ${'---'.padEnd(3)} ${'------'.padEnd(6)} ${'-'.repeat(25)} ${'-----'.padEnd(5)} ${'-------'.padEnd(7)} ${'-'.repeat(16)} ${'-'.repeat(15)} ${'-----'}
+${'Sel'.padEnd(3)} ${'Cur'.padEnd(3)} ${'Type'.padEnd(6)} ${'Status'.padEnd(6)} ${'Branch Name'.padEnd(22)} ${'Age'.padEnd(5)} ${'Commits'.padEnd(7)} ${'Last Commit'.padEnd(15)} ${'Author'.padEnd(12)} ${'Merge'}
+${'---'.padEnd(3)} ${'---'.padEnd(3)} ${'------'.padEnd(6)} ${'------'.padEnd(6)} ${'-'.repeat(22)} ${'-----'.padEnd(5)} ${'-------'.padEnd(7)} ${'-'.repeat(15)} ${'-'.repeat(12)} ${'-----'}
 `;
 
     const branchLines = visibleBranches.map((branch, displayIndex) => {
@@ -176,6 +178,9 @@ ${'---'.padEnd(3)} ${'---'.padEnd(3)} ${'------'.padEnd(6)} ${'-'.repeat(25)} ${
       const isSelected = actualIndex === this.selectedIndex;
       const prefix = isSelected ? '►' : ' ';
       const current = branch.current ? '*' : ' ';
+      
+      // Branch type indicator
+      const branchType = branch.branchType === 'remote' ? 'REMOTE' : 'LOCAL ';
       
       // Create a cleaner status indicator using simple characters
       let status = '';
@@ -190,7 +195,7 @@ ${'---'.padEnd(3)} ${'---'.padEnd(3)} ${'------'.padEnd(6)} ${'-'.repeat(25)} ${
       const mergeable = branch.mergeable ? '✓' : '✗';
       
       const age = Math.floor((Date.now() - branch.lastActivity.getTime()) / (1000 * 60 * 60 * 24));
-      const branchName = branch.name.length > 24 ? branch.name.substring(0, 21) + '...' : branch.name;
+      const branchName = branch.name.length > 21 ? branch.name.substring(0, 18) + '...' : branch.name;
       const ageStr = `${age}d`;
       
       // Format last commit date/time
@@ -216,23 +221,24 @@ ${'---'.padEnd(3)} ${'---'.padEnd(3)} ${'------'.padEnd(6)} ${'-'.repeat(25)} ${
       }
       
       // Ensure the lastCommitStr fits in the column
-      if (lastCommitStr.length > 15) {
-        lastCommitStr = lastCommitStr.substring(0, 12) + '...';
+      if (lastCommitStr.length > 14) {
+        lastCommitStr = lastCommitStr.substring(0, 11) + '...';
       }
       
       // Format author name
       let authorStr = branch.lastCommitAuthor || 'Unknown';
-      if (authorStr.length > 14) {
-        authorStr = authorStr.substring(0, 11) + '...';
+      if (authorStr.length > 11) {
+        authorStr = authorStr.substring(0, 8) + '...';
       }
       
-      return `${prefix.padEnd(3)} ${current.padEnd(3)} ${status.padEnd(6)} ${branchName.padEnd(25)} ${ageStr.padEnd(5)} ${branch.commitCount.toString().padEnd(7)} ${lastCommitStr.padEnd(16)} ${authorStr.padEnd(15)} ${mergeable}`;
+      return `${prefix.padEnd(3)} ${current.padEnd(3)} ${branchType.padEnd(6)} ${status.padEnd(6)} ${branchName.padEnd(22)} ${ageStr.padEnd(5)} ${branch.commitCount.toString().padEnd(7)} ${lastCommitStr.padEnd(15)} ${authorStr.padEnd(12)} ${mergeable}`;
     });
 
     const legend = `
 
 Legend:
   ► = Selected  * = Current Branch  
+  Type: LOCAL = Local branch, REMOTE = Remote branch
   Status: ACTIVE = Normal branch, STALE = No recent activity, CONFCT = Has conflicts
   Merge: ✓ = Mergeable, ✗ = Has conflicts
 `;

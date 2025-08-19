@@ -5,6 +5,7 @@ import { ConfigManager } from '../utils/ConfigManager.js';
 // Import types from centralized location
 import { 
   BranchInfo, 
+  BranchType,
   AnalysisResult, 
   ProgressCallback, 
   CommitActivity 
@@ -98,6 +99,8 @@ export class GitAnalyzer {
           path: this.repositoryPath,
           defaultBranch,
           totalBranches: detailedBranches.length,
+          localBranches: detailedBranches.filter(b => b.branchType === 'local').length,
+          remoteBranches: detailedBranches.filter(b => b.branchType === 'remote').length,
           staleBranches: detailedBranches.filter(b => b.isStale).length,
           mergeableBranches: detailedBranches.filter(b => b.mergeable).length,
           conflictedBranches: detailedBranches.filter(b => b.conflictCount > 0).length
@@ -116,9 +119,16 @@ export class GitAnalyzer {
    */
   private async getBulkBranchData(): Promise<BatchBranchData[]> {
     try {
+      const config = ConfigManager.loadConfig();
+      
       // Get all branch information in one call
-      const branches = await this.git.branch();
-      const branchNames = Object.keys(branches.branches);
+      const branches = await this.git.branch(['-a']); // Always get all branches
+      let branchNames = Object.keys(branches.branches);
+      
+      // Filter out remote branches if not wanted in the configuration
+      if (!config.includeRemoteBranches) {
+        branchNames = branchNames.filter(name => !name.startsWith('remotes/'));
+      }
       
       // Ensure the current branch is included (sometimes it's missing from branches.branches)
       if (branches.current && !branchNames.includes(branches.current)) {
@@ -135,7 +145,8 @@ export class GitAnalyzer {
       const forEachRefOutput = await this.git.raw([
         'for-each-ref',
         '--format=%(refname:short)|%(objectname)|%(committerdate:iso8601)|%(authorname)',
-        'refs/heads/'
+        'refs/heads/',
+        'refs/remotes/'
       ]);
 
       // Parse the bulk output
@@ -145,6 +156,11 @@ export class GitAnalyzer {
           const [name, commit, date, author] = line.split('|');
           if (name && commit && date && author) {
             refData.set(name, { commit, date, author });
+            
+            // For remote branches, also map the remotes/ prefix format
+            if (name.startsWith('origin/') && !name.startsWith('remotes/')) {
+              refData.set(`remotes/${name}`, { commit, date, author });
+            }
           }
         }
       });
@@ -157,7 +173,13 @@ export class GitAnalyzer {
 
       return branchNames.map(branchName => {
         const branch = branches.branches[branchName];
-        const refInfo = refData.get(branchName);
+        let refInfo = refData.get(branchName);
+        
+        // Try alternative mapping for remote branches
+        if (!refInfo && branchName.startsWith('remotes/')) {
+          const altName = branchName.replace('remotes/', '');
+          refInfo = refData.get(altName);
+        }
         
         // For branches not in branches.branches (like current branch), create minimal info
         if (!branch && refInfo) {
@@ -351,6 +373,7 @@ export class GitAnalyzer {
       lastCommitAuthor: branch.lastCommitAuthor || 'Unknown',
       isStale: false, // Will be calculated below
       commitCount: branch.commitCount || 0,
+      branchType: this.determineBranchType(branch.name),
       divergence: { ahead: 0, behind: 0 },
       contributors: [],
       mergeable: branch.mergedIntoDefault || false,
@@ -399,6 +422,16 @@ export class GitAnalyzer {
   }
 
   /**
+   * Determine if a branch is local, remote, or both
+   */
+  private determineBranchType(branchName: string): BranchType {
+    if (branchName.startsWith('remotes/')) {
+      return 'remote';
+    }
+    return 'local';
+  }
+
+  /**
    * Create basic branch info when detailed analysis fails
    */
   private createBasicBranchInfo(branch: BatchBranchData): BranchInfo {
@@ -410,6 +443,7 @@ export class GitAnalyzer {
       lastCommitAuthor: branch.lastCommitAuthor || 'Unknown',
       isStale: this.isStale(new Date(branch.lastCommitDate || Date.now())),
       commitCount: branch.commitCount || 0,
+      branchType: this.determineBranchType(branch.name),
       divergence: { ahead: 0, behind: 0 },
       contributors: [],
       mergeable: branch.mergedIntoDefault || false,

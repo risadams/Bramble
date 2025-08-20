@@ -6,9 +6,12 @@ import { mockAnalysisResult } from './fixtures.js';
 jest.mock('../src/core/GitAnalyzer.js');
 jest.mock('../src/ui/TerminalUI.js');
 jest.mock('../src/services/ExportService.js');
+jest.mock('../src/services/RepositoryHealthService.js');
+jest.mock('../src/services/EnhancedVisualizationEngine.js');
 
 const mockGitAnalyzer = {
-  analyze: jest.fn() as jest.MockedFunction<any>
+  analyze: jest.fn() as jest.MockedFunction<any>,
+  getGit: jest.fn() as jest.MockedFunction<any>
 };
 
 const mockTerminalUI = {
@@ -17,6 +20,15 @@ const mockTerminalUI = {
 
 const mockExportService = {
   export: jest.fn() as jest.MockedFunction<any>
+};
+
+const mockRepositoryHealthService = {
+  generateHealthReport: jest.fn() as jest.MockedFunction<any>
+};
+
+const mockEnhancedVisualizationEngine = {
+  render: jest.fn() as jest.MockedFunction<any>,
+  generateVisualization: jest.fn() as jest.MockedFunction<any>
 };
 
 // Mock the constructor imports
@@ -32,17 +44,33 @@ jest.mock('../src/services/ExportService.js', () => ({
   ExportService: jest.fn().mockImplementation(() => mockExportService)
 }));
 
+jest.mock('../src/services/RepositoryHealthService.js', () => ({
+  RepositoryHealthService: jest.fn().mockImplementation(() => mockRepositoryHealthService)
+}));
+
+jest.mock('../src/services/EnhancedVisualizationEngine.js', () => ({
+  EnhancedVisualizationEngine: jest.fn().mockImplementation(() => mockEnhancedVisualizationEngine)
+}));
+
 describe('BrambleApp', () => {
   let app: BrambleApp;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    app = new BrambleApp('/test/repo');
     
     // Setup default mock returns
     (mockGitAnalyzer.analyze as jest.MockedFunction<any>).mockResolvedValue(mockAnalysisResult);
+    (mockGitAnalyzer.getGit as jest.MockedFunction<any>).mockReturnValue({
+      // Mock simple-git instance
+      raw: jest.fn(),
+      status: jest.fn(),
+      branch: jest.fn(),
+      log: jest.fn()
+    });
     (mockTerminalUI.start as jest.MockedFunction<any>).mockResolvedValue(undefined);
     (mockExportService.export as jest.MockedFunction<any>).mockResolvedValue('export-content');
+    
+    app = new BrambleApp('/test/repo');
   });
 
   describe('constructor', () => {

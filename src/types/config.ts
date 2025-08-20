@@ -1,3 +1,5 @@
+import { HealthConfig } from './health.js';
+
 export interface BrambleConfig {
   staleDays: number;
   defaultExportFormat: 'json' | 'html' | 'csv' | 'markdown';
@@ -5,6 +7,7 @@ export interface BrambleConfig {
   maxBranches: number;
   includeRemoteBranches: boolean;
   defaultBranchCandidates: string[];
+  health?: Partial<HealthConfig>;
 }
 
 export const DEFAULT_CONFIG: BrambleConfig = {

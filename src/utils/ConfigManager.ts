@@ -3,6 +3,9 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { BrambleConfig, DEFAULT_CONFIG } from '../types/config.js';
 
+/**
+ * Legacy ConfigManager - maintains backward compatibility
+ */
 export class ConfigManager {
   private static readonly CONFIG_FILE_NAME = '.bramblerc';
   private static config: BrambleConfig | null = null;

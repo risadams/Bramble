@@ -21,6 +21,10 @@ interface CliOptions {
   maxBranches?: number;
   maxConcurrency?: number;
   skipStale?: number;
+  // Health monitoring options
+  health?: boolean;
+  healthExport?: string;
+  healthDimensions?: string;
 }
 
 const program = new Command();
@@ -43,6 +47,11 @@ Performance Options (for large repositories):
   $ bramble analyze --max-branches 100        # Limit to 100 most recent branches
   $ bramble analyze --skip-stale 90           # Skip branches older than 90 days
   $ bramble analyze --max-concurrency 4       # Use 4 parallel workers
+
+Health Monitoring:
+  $ bramble analyze --health                          # Generate repository health report
+  $ bramble analyze --health --health-export health.md  # Export health report to file
+  $ bramble analyze --health-dimensions codeQuality,security  # Analyze specific dimensions
 
 Features:
   • Interactive branch visualization and statistics
@@ -67,6 +76,9 @@ program
   .option('--max-branches <number>', 'Limit analysis to N most recent branches', (value) => parseInt(value))
   .option('--max-concurrency <number>', 'Number of parallel workers (default: CPU cores)', (value) => parseInt(value))
   .option('--skip-stale <days>', 'Skip branches older than N days', (value) => parseInt(value))
+  .option('--health', 'Generate repository health report')
+  .option('--health-export <filename>', 'Export health report to file (supports .json, .md)')
+  .option('--health-dimensions <dimensions>', 'Comma-separated list of health dimensions to analyze')
   .action(async (path: string = '.', options: CliOptions) => {
     try {
       console.log(chalk.blue.bold('🌿 Bramble - Git Branch Analysis Tool'));
@@ -150,6 +162,16 @@ async function runSingleAnalysis(path: string, options: CliOptions): Promise<voi
     if (options.maxConcurrency) {
       console.log(chalk.gray(`   → Using ${options.maxConcurrency} concurrent workers`));
     }
+    
+    if (options.health) {
+      console.log(chalk.gray('   → Repository health analysis enabled'));
+      if (options.healthDimensions) {
+        console.log(chalk.gray(`   → Health dimensions: ${options.healthDimensions}`));
+      }
+      if (options.healthExport) {
+        console.log(chalk.gray(`   → Health report export: ${options.healthExport}`));
+      }
+    }
   }
 
   // Validate repository
@@ -174,6 +196,16 @@ async function runSingleAnalysis(path: string, options: CliOptions): Promise<voi
   if (options.maxBranches !== undefined) brambleOptions.maxBranches = options.maxBranches;
   if (options.maxConcurrency !== undefined) brambleOptions.maxConcurrency = options.maxConcurrency;
   if (options.skipStale !== undefined) brambleOptions.skipStale = options.skipStale;
+  
+  // Add batch mode option
+  if (options.batch !== undefined) brambleOptions.batch = options.batch;
+  
+  // Add health monitoring options
+  if (options.health !== undefined) brambleOptions.health = options.health;
+  if (options.healthExport !== undefined) brambleOptions.healthExport = options.healthExport;
+  if (options.healthDimensions !== undefined) {
+    brambleOptions.healthDimensions = options.healthDimensions.split(',').map(d => d.trim());
+  }
   
   const app = new BrambleApp(path, brambleOptions);
   await app.run();

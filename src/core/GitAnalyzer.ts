@@ -1,6 +1,10 @@
 import simpleGit, { SimpleGit, BranchSummary } from 'simple-git';
 import { cpus } from 'os';
 import { ConfigManager } from '../utils/ConfigManager.js';
+import { IntegrationManager } from '../integrations/IntegrationManager.js';
+import { BranchComparisonService } from '../services/BranchComparisonService.js';
+import { StaleBranchService } from '../services/StaleBranchService.js';
+import { PerformanceMonitor } from '../services/PerformanceMonitor.js';
 
 // Import types from centralized location
 import { 
@@ -10,6 +14,9 @@ import {
   ProgressCallback, 
   CommitActivity 
 } from '../types/analysis.js';
+import { StaleBranchConfig, StaleBranchReport, StaleCleanupOptions, CleanupPlan, CleanupResult } from '../types/staleBranches.js';
+import { PerformanceReport, OptimizationConfig } from '../types/performance.js';
+import { BranchComparison, ComparisonOptions } from '../types/comparison.js';
 
 interface BatchBranchData {
   name: string;
@@ -33,15 +40,30 @@ export interface OptimizedAnalysisOptions {
 export class GitAnalyzer {
   private git: SimpleGit;
   private cache = new Map<string, any>();
+  private integrationManager: IntegrationManager;
+  private branchComparisonService: BranchComparisonService;
+  private staleBranchService: StaleBranchService;
+  private performanceMonitor: PerformanceMonitor;
 
   constructor(private repositoryPath: string) {
     this.git = simpleGit(repositoryPath);
+    this.integrationManager = new IntegrationManager();
+    this.branchComparisonService = new BranchComparisonService(this.git, repositoryPath);
+    this.staleBranchService = new StaleBranchService(this.git, repositoryPath);
+    this.performanceMonitor = new PerformanceMonitor({
+      enabled: true,
+      autoOptimize: false
+    }, this.git);
   }
 
   public async analyze(
     progressCallback?: ProgressCallback,
     options: OptimizedAnalysisOptions = {}
   ): Promise<AnalysisResult> {
+    const operationId = this.performanceMonitor.startOperation('analyze', { 
+      options,
+      repositoryPath: this.repositoryPath 
+    });
     const startTime = Date.now();
     
     // Set defaults
@@ -78,12 +100,69 @@ export class GitAnalyzer {
         progressCallback
       );
 
-      // Phase 4: Calculate statistics
-      progressCallback?.(4, 5, 'Calculating statistics...');
+      // Phase 4: Integration enrichment (if available and configured)
+      progressCallback?.(4, 6, 'Enriching with external data...');
+      let repositoryMetadata = null;
+      let integrationData = null;
+      
+      if (this.integrationManager.hasConfiguredProviders()) {
+        try {
+          repositoryMetadata = await this.integrationManager.detectRepository(this.repositoryPath);
+          if (repositoryMetadata) {
+            const branchNames = detailedBranches.map(b => b.name);
+            const enrichmentMap = await this.integrationManager.enrichBranches(branchNames, repositoryMetadata);
+            
+            // Apply enrichment to branches
+            detailedBranches.forEach(branch => {
+              const enrichment = enrichmentMap.get(branch.name);
+              if (enrichment) {
+                branch.pullRequests = enrichment.pullRequests.map(pr => ({
+                  id: pr.id,
+                  number: pr.number,
+                  title: pr.title,
+                  state: pr.state,
+                  url: pr.url
+                }));
+                branch.hasOpenPR = enrichment.hasOpenPR;
+                if (enrichment.lastPRActivity) {
+                  branch.lastPRActivity = enrichment.lastPRActivity;
+                }
+                if (enrichment.protection) {
+                  branch.protection = {
+                    enforced: enrichment.protection.enforced,
+                    requiredReviews: enrichment.protection.requiredReviews
+                  };
+                }
+              }
+            });
+
+            // Get all pull requests for integration summary
+            const allPRs = await this.integrationManager.getAllPullRequests(repositoryMetadata);
+            integrationData = {
+              provider: this.integrationManager.getConfiguredProviders()[0],
+              configured: true,
+              pullRequests: allPRs.slice(0, 20).map(pr => ({
+                number: pr.number,
+                title: pr.title,
+                branch: pr.branch,
+                state: pr.state,
+                author: pr.author
+              })),
+              totalPRs: allPRs.length,
+              openPRs: allPRs.filter(pr => pr.state === 'open').length
+            };
+          }
+        } catch (error) {
+          console.warn('Integration enrichment failed:', error);
+        }
+      }
+
+      // Phase 5: Calculate statistics
+      progressCallback?.(5, 6, 'Calculating statistics...');
       const statistics = this.calculateStatistics(detailedBranches);
       
-      // Phase 5: Generate activity overview
-      progressCallback?.(5, 5, 'Generating activity overview...');
+      // Phase 6: Generate activity overview
+      progressCallback?.(6, 6, 'Generating activity overview...');
       const activityOverview = this.generateActivityOverview(detailedBranches);
       
       const defaultBranch = await this.getDefaultBranch();
@@ -91,26 +170,53 @@ export class GitAnalyzer {
       
       if (progressCallback) {
         const duration = ((endTime - startTime) / 1000).toFixed(1);
-        progressCallback(5, 5, `Analysis complete in ${duration}s!`);
+        progressCallback(6, 6, `Analysis complete in ${duration}s!`);
       }
 
-      return {
-        repository: {
-          path: this.repositoryPath,
-          defaultBranch,
-          totalBranches: detailedBranches.length,
-          localBranches: detailedBranches.filter(b => b.branchType === 'local').length,
-          remoteBranches: detailedBranches.filter(b => b.branchType === 'remote').length,
-          staleBranches: detailedBranches.filter(b => b.isStale).length,
-          mergeableBranches: detailedBranches.filter(b => b.mergeable).length,
-          conflictedBranches: detailedBranches.filter(b => b.conflictCount > 0).length
-        },
+      const repositoryInfo = {
+        path: this.repositoryPath,
+        defaultBranch,
+        totalBranches: detailedBranches.length,
+        localBranches: detailedBranches.filter(b => b.branchType === 'local').length,
+        remoteBranches: detailedBranches.filter(b => b.branchType === 'remote').length,
+        staleBranches: detailedBranches.filter(b => b.isStale).length,
+        mergeableBranches: detailedBranches.filter(b => b.mergeable).length,
+        conflictedBranches: detailedBranches.filter(b => b.conflictCount > 0).length,
+        // Integration metadata
+        ...(repositoryMetadata && integrationData?.provider && {
+          hostingProvider: integrationData.provider,
+          repositoryUrl: repositoryMetadata.url,
+          isPrivate: repositoryMetadata.isPrivate,
+          language: repositoryMetadata.language,
+          stars: repositoryMetadata.stars,
+          openPRCount: integrationData.openPRs
+        })
+      };
+
+      const result: AnalysisResult = {
+        repository: repositoryInfo,
         branches: detailedBranches,
         statistics,
         activityOverview
       };
+
+      // Only include integrations data if provider is properly configured
+      if (integrationData?.provider && integrationData.configured) {
+        result.integrations = {
+          provider: integrationData.provider,
+          configured: integrationData.configured,
+          pullRequests: integrationData.pullRequests,
+          totalPRs: integrationData.totalPRs,
+          openPRs: integrationData.openPRs
+        };
+      }
+
+      return result;
     } catch (error) {
+      this.performanceMonitor.endOperation(operationId, false, error instanceof Error ? error.message : 'Unknown error');
       throw new Error(`Failed to analyze repository: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      this.performanceMonitor.endOperation(operationId, true);
     }
   }
 
@@ -797,5 +903,197 @@ export class GitAnalyzer {
       topContributors,
       branchTypes
     };
+  }
+
+  /**
+   * Compare two branches with detailed analysis
+   */
+  public async compareBranches(
+    sourceBranch: string,
+    targetBranch: string,
+    options: ComparisonOptions = {}
+  ): Promise<BranchComparison> {
+    console.log(`🔄 Starting detailed comparison: ${sourceBranch} → ${targetBranch}`);
+    
+    try {
+      const comparison = await this.branchComparisonService.compareBranches(
+        sourceBranch, 
+        targetBranch, 
+        {
+          includeContext: 3,
+          ignoreWhitespace: false,
+          detectRenames: true,
+          maxFiles: 100,
+          conflictAnalysis: true,
+          complexityAnalysis: true,
+          ...options
+        }
+      );
+
+      console.log(`✅ Comparison complete: ${comparison.files.length} files, complexity: ${comparison.complexity.category}`);
+      return comparison;
+
+    } catch (error) {
+      console.error(`❌ Branch comparison failed:`, error);
+      throw new Error(`Failed to compare branches ${sourceBranch} and ${targetBranch}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Get a quick comparison summary between two branches
+   */
+  public async getQuickComparison(
+    sourceBranch: string,
+    targetBranch: string
+  ): Promise<{
+    ahead: number;
+    behind: number;
+    diverged: boolean;
+    filesChanged: number;
+    complexity: 'trivial' | 'simple' | 'moderate' | 'complex' | 'high-risk';
+  }> {
+    try {
+      const comparison = await this.branchComparisonService.compareBranches(
+        sourceBranch, 
+        targetBranch, 
+        {
+          maxFiles: 20,
+          conflictAnalysis: false,
+          complexityAnalysis: true
+        }
+      );
+
+      return {
+        ahead: comparison.ahead,
+        behind: comparison.behind,
+        diverged: comparison.diverged,
+        filesChanged: comparison.files.length,
+        complexity: comparison.complexity.category
+      };
+
+    } catch (error) {
+      console.warn(`Quick comparison failed for ${sourceBranch} → ${targetBranch}:`, error);
+      return {
+        ahead: 0,
+        behind: 0,
+        diverged: false,
+        filesChanged: 0,
+        complexity: 'trivial'
+      };
+    }
+  }
+
+  /**
+   * Analyze repository for stale branches
+   */
+  public async analyzeStaleBranches(config?: StaleBranchConfig): Promise<StaleBranchReport> {
+    const staleBranchConfig = config || StaleBranchService.getDefaultConfig();
+    console.log(`🔍 Analyzing stale branches with ${staleBranchConfig.staleDaysThreshold} day threshold...`);
+    
+    try {
+      const report = await this.staleBranchService.analyzeStaleBranches(staleBranchConfig);
+      console.log(`📊 Found ${report.staleBranches.length} stale branches out of ${report.totalBranches} total`);
+      return report;
+    } catch (error) {
+      console.error('❌ Stale branch analysis failed:', error);
+      throw new Error(`Failed to analyze stale branches: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Create a cleanup plan for stale branches
+   */
+  public async createStaleCleanupPlan(
+    staleBranches: StaleBranchReport,
+    options?: StaleCleanupOptions
+  ): Promise<CleanupPlan> {
+    const cleanupOptions = { ...StaleBranchService.getDefaultCleanupOptions(), ...options };
+    console.log(`📋 Creating cleanup plan for ${staleBranches.staleBranches.length} stale branches...`);
+
+    try {
+      const plan = await this.staleBranchService.createCleanupPlan(
+        staleBranches.staleBranches, 
+        cleanupOptions
+      );
+      console.log(`📝 Cleanup plan created: ${plan.totalBranches} branches, risk: ${plan.overallRisk}`);
+      return plan;
+    } catch (error) {
+      console.error('❌ Failed to create cleanup plan:', error);
+      throw new Error(`Failed to create cleanup plan: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Execute a stale branch cleanup plan
+   */
+  public async executeStaleCleanup(
+    plan: CleanupPlan,
+    options?: StaleCleanupOptions
+  ): Promise<CleanupResult[]> {
+    const cleanupOptions = { ...StaleBranchService.getDefaultCleanupOptions(), ...options };
+    console.log(`🧹 Executing cleanup plan for ${plan.totalBranches} branches...`);
+
+    try {
+      const results = await this.staleBranchService.executeCleanupPlan(plan, cleanupOptions);
+      const successful = results.filter(r => r.success).length;
+      console.log(`✅ Cleanup complete: ${successful}/${results.length} operations successful`);
+      return results;
+    } catch (error) {
+      console.error('❌ Cleanup execution failed:', error);
+      throw new Error(`Failed to execute cleanup: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Generate performance report
+   */
+  public async generatePerformanceReport(): Promise<PerformanceReport> {
+    console.log('📊 Generating performance report...');
+
+    try {
+      const report = await this.performanceMonitor.generateReport(this.repositoryPath);
+      console.log(`✅ Performance report generated: Score ${report.overallScore}/100 (${report.category})`);
+      return report;
+    } catch (error) {
+      console.error('❌ Failed to generate performance report:', error);
+      throw new Error(`Failed to generate performance report: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Optimize performance
+   */
+  public async optimizePerformance(): Promise<string[]> {
+    console.log('🚀 Optimizing performance...');
+
+    try {
+      const actions = await this.performanceMonitor.optimizePerformance();
+      console.log(`✅ Performance optimization complete: ${actions.length} actions taken`);
+      return actions;
+    } catch (error) {
+      console.error('❌ Performance optimization failed:', error);
+      throw new Error(`Failed to optimize performance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Get cache statistics
+   */
+  public getCacheStats() {
+    return this.performanceMonitor.getCacheStats();
+  }
+
+  /**
+   * Clear performance cache
+   */
+  public clearPerformanceCache(): void {
+    this.performanceMonitor.clearCache();
+  }
+
+  /**
+   * Get the underlying Git instance for health service
+   */
+  public getGit(): SimpleGit {
+    return this.git;
   }
 }

@@ -3,7 +3,9 @@ import { ProgressCallback } from '../types/analysis.js';
 import { GitAnalyzer, OptimizedAnalysisOptions } from '../core/GitAnalyzer.js';
 import { TerminalUI } from '../ui/TerminalUI.js';
 import { ExportService } from '../services/ExportService.js';
+import { RepositoryHealthService } from '../services/RepositoryHealthService.js';
 import { BrambleConfig } from '../types/config.js';
+import { HealthAnalysisOptions } from '../types/health.js';
 import { ProgressIndicator, SpinnerIndicator } from '../utils/progressIndicator.js';
 
 interface BrambleOptions {
@@ -19,12 +21,17 @@ interface BrambleOptions {
   maxBranches?: number;
   maxConcurrency?: number;
   skipStale?: number; // days
+  // Health monitoring options
+  health?: boolean;
+  healthExport?: string;
+  healthDimensions?: string[];
 }
 
 export class BrambleApp {
   private gitAnalyzer: GitAnalyzer;
   private ui: TerminalUI;
   private exportService: ExportService;
+  private healthService: RepositoryHealthService;
   private options: BrambleOptions;
 
   constructor(private repositoryPath: string, options: BrambleOptions = {}) {
@@ -32,6 +39,11 @@ export class BrambleApp {
     this.gitAnalyzer = new GitAnalyzer(repositoryPath);
     this.ui = new TerminalUI();
     this.exportService = new ExportService();
+    this.healthService = new RepositoryHealthService(
+      this.gitAnalyzer.getGit(), 
+      repositoryPath,
+      options.config?.health
+    );
   }
 
   public async run(): Promise<void> {
@@ -138,13 +150,22 @@ export class BrambleApp {
         console.log(chalk.gray(`   → ${analysisResult.repository.staleBranches} stale, ${analysisResult.repository.mergeableBranches} mergeable, ${analysisResult.repository.conflictedBranches} conflicted`));
       }
 
+      // Generate health report if requested
+      if (this.options.health) {
+        await this.generateHealthReport(analysisResult);
+      }
+
       // Export if requested
       if (this.options.export) {
         await this.exportResults(analysisResult);
       }
 
-      // Start interactive UI
-      await this.ui.start(analysisResult);
+      // Start interactive UI only if not in batch mode
+      if (!this.options.batch) {
+        await this.ui.start(analysisResult);
+      } else {
+        console.log(chalk.green('✅ Analysis complete. Use --export to save results.'));
+      }
 
     } catch (error) {
       console.error(chalk.red('❌ Application error:'), error);
@@ -162,6 +183,129 @@ export class BrambleApp {
     });
 
     console.log(chalk.green(`📄 Results exported to: ${this.options.export}`));
+  }
+
+  private async generateHealthReport(analysisResult: any): Promise<void> {
+    try {
+      console.log(chalk.blue('🏥 Generating repository health report...'));
+
+      const healthOptions: HealthAnalysisOptions = {
+        includeTrends: true,
+        dimensions: this.options.healthDimensions as any
+      };
+
+      const healthReport = await this.healthService.generateHealthReport(analysisResult, healthOptions);
+
+      // Display health summary
+      console.log();
+      console.log(chalk.bold(`📊 Repository Health Score: ${healthReport.overallScore}/100 (${healthReport.category.toUpperCase()})`));
+      
+      // Display dimension scores
+      healthReport.dimensions.forEach(dim => {
+        const color = dim.category === 'excellent' ? 'green' : 
+                     dim.category === 'good' ? 'blue' :
+                     dim.category === 'fair' ? 'yellow' :
+                     dim.category === 'poor' ? 'magenta' : 'red';
+        
+        console.log(chalk[color](`   ${dim.dimension}: ${Math.round(dim.score)}/100`));
+      });
+
+      // Show critical issues if any
+      if (healthReport.summary.criticalIssues.length > 0) {
+        console.log();
+        console.log(chalk.red('⚠️  Critical Issues:'));
+        healthReport.summary.criticalIssues.forEach(issue => {
+          console.log(chalk.red(`   • ${issue}`));
+        });
+      }
+
+      // Show quick wins if any
+      if (healthReport.summary.quickWins.length > 0) {
+        console.log();
+        console.log(chalk.yellow('💡 Quick Wins:'));
+        healthReport.summary.quickWins.slice(0, 3).forEach(win => {
+          console.log(chalk.yellow(`   • ${win}`));
+        });
+      }
+
+      // Export health report if requested
+      if (this.options.healthExport) {
+        await this.exportHealthReport(healthReport);
+      }
+
+    } catch (error) {
+      console.error(chalk.red('❌ Failed to generate health report:'), error);
+    }
+  }
+
+  private async exportHealthReport(healthReport: any): Promise<void> {
+    try {
+      const exportPath = this.options.healthExport!;
+      const format = exportPath.split('.').pop()?.toLowerCase() || 'json';
+      
+      let content: string;
+      switch (format) {
+        case 'json':
+          content = JSON.stringify(healthReport, null, 2);
+          break;
+        case 'md':
+        case 'markdown':
+          content = this.generateHealthMarkdown(healthReport);
+          break;
+        default:
+          content = JSON.stringify(healthReport, null, 2);
+      }
+
+      await import('fs/promises').then(fs => fs.writeFile(exportPath, content));
+      console.log(chalk.green(`📄 Health report exported to: ${exportPath}`));
+    } catch (error) {
+      console.error(chalk.red('❌ Failed to export health report:'), error);
+    }
+  }
+
+  private generateHealthMarkdown(healthReport: any): string {
+    return `# Repository Health Report
+
+**Repository:** ${healthReport.repositoryName}  
+**Generated:** ${new Date(healthReport.generatedAt).toLocaleString()}  
+**Overall Score:** ${healthReport.overallScore}/100 (${healthReport.category.toUpperCase()})
+
+## Health Dimensions
+
+${healthReport.dimensions.map((dim: any) => `
+### ${dim.dimension.charAt(0).toUpperCase() + dim.dimension.slice(1)}
+- **Score:** ${Math.round(dim.score)}/100
+- **Category:** ${dim.category.toUpperCase()}
+- **Recommendations:**
+${dim.recommendations.map((rec: string) => `  - ${rec}`).join('\n')}
+`).join('\n')}
+
+## Summary
+
+### Strengths
+${healthReport.summary.strengths.map((s: string) => `- ${s}`).join('\n')}
+
+### Areas for Improvement
+${healthReport.summary.weaknesses.map((w: string) => `- ${w}`).join('\n')}
+
+${healthReport.summary.criticalIssues.length > 0 ? `
+### Critical Issues
+${healthReport.summary.criticalIssues.map((issue: string) => `- ${issue}`).join('\n')}
+` : ''}
+
+${healthReport.summary.quickWins.length > 0 ? `
+### Quick Wins
+${healthReport.summary.quickWins.map((win: string) => `- ${win}`).join('\n')}
+` : ''}
+
+## Repository Metadata
+- **Total Branches:** ${healthReport.metadata.totalBranches}
+- **Active Branches:** ${healthReport.metadata.activeBranches}
+- **Stale Branches:** ${healthReport.metadata.staleBranches}
+- **Total Commits:** ${healthReport.metadata.totalCommits}
+- **Contributors:** ${healthReport.metadata.contributors}
+- **Last Activity:** ${new Date(healthReport.metadata.lastActivity).toLocaleDateString()}
+`;
   }
 
   private getAnalysisOptions(): OptimizedAnalysisOptions {

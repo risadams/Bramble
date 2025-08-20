@@ -1,0 +1,614 @@
+/**
+ * Enhanced export service with PDF, XML, and advanced features
+ */
+
+import { promises as fs } from 'fs';
+import path from 'path';
+import { 
+  ExportData, 
+  ExportOptions, 
+  ExportFormat, 
+  PDFExportOptions, 
+  XMLExportOptions,
+  TemplateConfig,
+  ScheduledExport,
+  ExportTarget,
+  BatchExportOptions,
+  ExportResult 
+} from '../types/export.js';
+import { ExportService } from './ExportService.js';
+
+export class EnhancedExportService extends ExportService {
+  private templates: Map<string, TemplateConfig> = new Map();
+  private scheduledExports: Map<string, ScheduledExport> = new Map();
+
+  constructor() {
+    super();
+    this.loadBuiltInTemplates();
+  }
+
+  /**
+   * Export data with enhanced options including PDF and XML
+   */
+  public async exportData(
+    data: ExportData,
+    options: ExportOptions
+  ): Promise<ExportResult> {
+    try {
+      const startTime = Date.now();
+      let output: string | Buffer;
+      let mimeType: string;
+
+      // Apply template if specified
+      if (options.template) {
+        data = await this.applyTemplate(data, options.template);
+      }
+
+      // Generate output based on format
+      switch (options.format) {
+        case 'pdf':
+          ({ output, mimeType } = await this.generatePDF(data, options.pdf));
+          break;
+        case 'xml':
+          ({ output, mimeType } = await this.generateXML(data, options.xml));
+          break;
+        case 'json':
+        case 'html':
+        case 'csv':
+        case 'markdown':
+          // Use base class for standard formats
+          output = await this.generateStandardFormat(data, options.format);
+          mimeType = this.getMimeType(options.format);
+          break;
+        default:
+          throw new Error(`Unsupported export format: ${options.format}`);
+      }
+
+      // Save to file if path specified
+      let filePath: string | undefined;
+      if (options.outputPath) {
+        filePath = await this.saveToFile(output, options.outputPath);
+      }
+
+      // Send to additional targets
+      if (options.targets && options.targets.length > 0) {
+        await this.sendToTargets(output, options.targets, options.format);
+      }
+
+      const executionTime = Date.now() - startTime;
+
+      const result: ExportResult = {
+        success: true,
+        format: options.format,
+        size: Buffer.isBuffer(output) ? output.length : Buffer.byteLength(output, 'utf8'),
+        duration: executionTime,
+        metadata: data.metadata
+      };
+
+      if (filePath) {
+        result.outputPath = filePath;
+      }
+
+      return result;
+    } catch (error) {
+      return {
+        success: false,
+        format: options.format,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        duration: Date.now(),
+        metadata: data.metadata
+      };
+    }
+  }
+
+  /**
+   * Generate PDF export using puppeteer
+   */
+  private async generatePDF(
+    data: ExportData,
+    options: PDFExportOptions = {}
+  ): Promise<{ output: Buffer; mimeType: string }> {
+    // Dynamic import to avoid bundling issues
+    const puppeteer = await import('puppeteer');
+    
+    const browser = await puppeteer.default.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
+    try {
+      const page = await browser.newPage();
+      
+      // Generate HTML content
+      const htmlContent = await this.generateHTML(data);
+      
+      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+      
+      // Configure PDF options
+      const pdfOptions: any = {
+        format: options.format || 'A4',
+        margin: options.margin || {
+          top: '20mm',
+          right: '20mm',
+          bottom: '20mm',
+          left: '20mm'
+        },
+        printBackground: options.printBackground !== false,
+        displayHeaderFooter: options.displayHeaderFooter || false
+      };
+
+      if (options.headerTemplate) {
+        pdfOptions.headerTemplate = options.headerTemplate;
+      }
+
+      if (options.footerTemplate) {
+        pdfOptions.footerTemplate = options.footerTemplate;
+      }
+
+      const pdfBuffer = await page.pdf(pdfOptions);
+      
+      return {
+        output: pdfBuffer,
+        mimeType: 'application/pdf'
+      };
+    } finally {
+      await browser.close();
+    }
+  }
+
+  /**
+   * Generate XML export
+   */
+  private async generateXML(
+    data: ExportData,
+    options: XMLExportOptions = {}
+  ): Promise<{ output: string; mimeType: string }> {
+    const encoding = options.encoding || 'UTF-8';
+    const indent = options.indent !== false;
+    const includeDeclaration = options.includeDeclaration !== false;
+    
+    let xml = '';
+    
+    if (includeDeclaration) {
+      xml += `<?xml version="1.0" encoding="${encoding}"?>\n`;
+    }
+
+    if (options.stylesheet) {
+      xml += `<?xml-stylesheet type="text/xsl" href="${options.stylesheet}"?>\n`;
+    }
+
+    xml += this.objectToXML(data, 'bramble-export', indent ? 0 : -1, options);
+
+    return {
+      output: xml,
+      mimeType: 'application/xml'
+    };
+  }
+
+  /**
+   * Convert object to XML recursively
+   */
+  private objectToXML(
+    obj: any,
+    rootName: string,
+    indentLevel: number = 0,
+    options: XMLExportOptions = {}
+  ): string {
+    const indent = indentLevel >= 0 ? '  '.repeat(indentLevel) : '';
+    const newline = indentLevel >= 0 ? '\n' : '';
+    
+    if (obj === null || obj === undefined) {
+      return `${indent}<${rootName} />${newline}`;
+    }
+
+    if (typeof obj !== 'object') {
+      const escaped = this.escapeXML(String(obj));
+      return `${indent}<${rootName}>${escaped}</${rootName}>${newline}`;
+    }
+
+    if (Array.isArray(obj)) {
+      let xml = `${indent}<${rootName}>${newline}`;
+      obj.forEach((item, index) => {
+        const itemName = options.arrayItemName || 'item';
+        xml += this.objectToXML(item, itemName, indentLevel + 1, options);
+      });
+      xml += `${indent}</${rootName}>${newline}`;
+      return xml;
+    }
+
+    if (obj instanceof Date) {
+      return `${indent}<${rootName}>${obj.toISOString()}</${rootName}>${newline}`;
+    }
+
+    let xml = `${indent}<${rootName}>${newline}`;
+    
+    for (const [key, value] of Object.entries(obj)) {
+      const sanitizedKey = this.sanitizeXMLTagName(key);
+      xml += this.objectToXML(value, sanitizedKey, indentLevel + 1, options);
+    }
+    
+    xml += `${indent}</${rootName}>${newline}`;
+    return xml;
+  }
+
+  /**
+   * Escape XML special characters
+   */
+  private escapeXML(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  }
+
+  /**
+   * Sanitize XML tag names
+   */
+  private sanitizeXMLTagName(name: string): string {
+    return name
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .replace(/^[^a-zA-Z_]/, '_');
+  }
+
+  /**
+   * Apply template to data
+   */
+  private async applyTemplate(
+    data: ExportData,
+    templateName: string
+  ): Promise<ExportData> {
+    const template = this.templates.get(templateName);
+    if (!template) {
+      throw new Error(`Template not found: ${templateName}`);
+    }
+
+    // Apply template transformations
+    const transformedData = { ...data };
+
+    if (template.dataFilters) {
+      for (const filter of template.dataFilters) {
+        await this.applyDataFilter(transformedData, filter);
+      }
+    }
+
+    return transformedData;
+  }
+
+  /**
+   * Apply data filter
+   */
+  private async applyDataFilter(
+    data: ExportData,
+    filter: any
+  ): Promise<void> {
+    // Implementation would depend on filter configuration
+    // This is a placeholder for template-based data transformation
+  }
+
+  /**
+   * Send export to additional targets
+   */
+  private async sendToTargets(
+    content: string | Buffer,
+    targets: ExportTarget[],
+    format: ExportFormat
+  ): Promise<void> {
+    for (const target of targets) {
+      try {
+        switch (target.type) {
+          case 'email':
+            await this.sendEmail(content, target, format);
+            break;
+          case 'webhook':
+            await this.sendWebhook(content, target, format);
+            break;
+          case 's3':
+            await this.uploadToS3(content, target, format);
+            break;
+          case 'ftp':
+            await this.uploadToFTP(content, target, format);
+            break;
+          case 'github-release':
+            await this.uploadToGitHubRelease(content, target, format);
+            break;
+        }
+      } catch (error) {
+        console.error(`Failed to send to target ${target.type}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Send via email
+   */
+  private async sendEmail(
+    content: string | Buffer,
+    target: ExportTarget,
+    format: ExportFormat
+  ): Promise<void> {
+    // Implementation would use nodemailer or similar
+    console.log('Email sending not implemented yet');
+  }
+
+  /**
+   * Send via webhook
+   */
+  private async sendWebhook(
+    content: string | Buffer,
+    target: ExportTarget,
+    format: ExportFormat
+  ): Promise<void> {
+    if (!target.url) {
+      throw new Error('Webhook URL is required');
+    }
+
+    const response = await fetch(target.url, {
+      method: target.method || 'POST',
+      headers: {
+        'Content-Type': this.getMimeType(format),
+        ...target.headers
+      },
+      body: content
+    });
+
+    if (!response.ok) {
+      throw new Error(`Webhook failed: ${response.status} ${response.statusText}`);
+    }
+  }
+
+  /**
+   * Upload to S3
+   */
+  private async uploadToS3(
+    content: string | Buffer,
+    target: ExportTarget,
+    format: ExportFormat
+  ): Promise<void> {
+    // Implementation would use AWS SDK
+    console.log('S3 upload not implemented yet');
+  }
+
+  /**
+   * Upload to FTP
+   */
+  private async uploadToFTP(
+    content: string | Buffer,
+    target: ExportTarget,
+    format: ExportFormat
+  ): Promise<void> {
+    // Implementation would use ftp library
+    console.log('FTP upload not implemented yet');
+  }
+
+  /**
+   * Upload to GitHub Release
+   */
+  private async uploadToGitHubRelease(
+    content: string | Buffer,
+    target: ExportTarget,
+    format: ExportFormat
+  ): Promise<void> {
+    // Implementation would use GitHub API
+    console.log('GitHub Release upload not implemented yet');
+  }
+
+  /**
+   * Batch export multiple datasets
+   */
+  public async batchExport(
+    datasets: ExportData[],
+    options: BatchExportOptions
+  ): Promise<ExportResult[]> {
+    const results: ExportResult[] = [];
+    const concurrency = options.concurrency || 3;
+    
+    // Process in chunks to control concurrency
+    for (let i = 0; i < datasets.length; i += concurrency) {
+      const chunk = datasets.slice(i, i + concurrency);
+      const chunkPromises = chunk.map(async (data, index) => {
+        const exportOptions: ExportOptions = {
+          ...options.baseOptions,
+          outputPath: options.outputPattern
+            ? options.outputPattern.replace('{index}', String(i + index))
+            : undefined
+        };
+        
+        return this.exportData(data, exportOptions);
+      });
+      
+      const chunkResults = await Promise.all(chunkPromises);
+      results.push(...chunkResults);
+    }
+    
+    return results;
+  }
+
+  /**
+   * Schedule export
+   */
+  public scheduleExport(exportConfig: ScheduledExport): void {
+    this.scheduledExports.set(exportConfig.id, exportConfig);
+    
+    if (exportConfig.schedule.type === 'interval') {
+      const intervalMs = this.parseInterval(exportConfig.schedule.interval!);
+      setInterval(() => {
+        this.executeScheduledExport(exportConfig.id);
+      }, intervalMs);
+    } else if (exportConfig.schedule.type === 'cron') {
+      // Implementation would use node-cron or similar
+      console.log('Cron scheduling not implemented yet');
+    }
+  }
+
+  /**
+   * Execute scheduled export
+   */
+  private async executeScheduledExport(exportId: string): Promise<void> {
+    const scheduledExport = this.scheduledExports.get(exportId);
+    if (!scheduledExport) {
+      return;
+    }
+
+    try {
+      // Generate fresh data
+      const data = await this.generateExportData(scheduledExport.dataSource);
+      
+      // Execute export
+      const result = await this.exportData(data, scheduledExport.options);
+      
+      console.log(`Scheduled export ${exportId} completed:`, result);
+    } catch (error) {
+      console.error(`Scheduled export ${exportId} failed:`, error);
+    }
+  }
+
+  /**
+   * Generate export data from data source configuration
+   */
+  private async generateExportData(dataSource: any): Promise<ExportData> {
+    // This would integrate with GitAnalyzer and other services
+    // to generate fresh data based on the data source configuration
+    throw new Error('Data source generation not implemented yet');
+  }
+
+  /**
+   * Parse interval string to milliseconds
+   */
+  private parseInterval(interval: string): number {
+    const units = {
+      's': 1000,
+      'm': 60 * 1000,
+      'h': 60 * 60 * 1000,
+      'd': 24 * 60 * 60 * 1000
+    };
+    
+    const match = interval.match(/^(\d+)([smhd])$/);
+    if (!match) {
+      throw new Error(`Invalid interval format: ${interval}`);
+    }
+    
+    const value = parseInt(match[1]);
+    const unit = match[2] as keyof typeof units;
+    
+    return value * units[unit];
+  }
+
+  /**
+   * Load built-in templates
+   */
+  private loadBuiltInTemplates(): void {
+    // Executive Summary Template
+    this.templates.set('executive-summary', {
+      name: 'Executive Summary',
+      description: 'High-level overview focusing on key metrics',
+      format: 'pdf',
+      sections: ['summary', 'key-metrics', 'recommendations'],
+      dataFilters: [
+        { type: 'summarize', target: 'analysis' },
+        { type: 'highlight', target: 'performance.critical' }
+      ]
+    });
+
+    // Technical Report Template
+    this.templates.set('technical-report', {
+      name: 'Technical Report',
+      description: 'Detailed technical analysis with full data',
+      format: 'html',
+      sections: ['analysis', 'comparison', 'stale-branches', 'performance'],
+      dataFilters: []
+    });
+
+    // Cleanup Report Template
+    this.templates.set('cleanup-report', {
+      name: 'Cleanup Report',
+      description: 'Focus on stale branches and cleanup recommendations',
+      format: 'markdown',
+      sections: ['stale-branches', 'cleanup-recommendations'],
+      dataFilters: [
+        { type: 'filter', target: 'staleAnalysis', criteria: 'high-risk' }
+      ]
+    });
+  }
+
+  /**
+   * Generate HTML content for PDF generation
+   */
+  private async generateHTML(data: ExportData): Promise<string> {
+    // Use base class HTML generation and enhance with PDF styling
+    const baseHtml = await super.generateHTML(data.analysis!, {});
+    
+    // Add PDF-specific styles
+    const pdfStyles = `
+      <style>
+        @media print {
+          body { font-family: Arial, sans-serif; font-size: 12px; }
+          .page-break { page-break-before: always; }
+          .no-break { page-break-inside: avoid; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #f2f2f2; }
+        }
+      </style>
+    `;
+    
+    return baseHtml.replace('</head>', `${pdfStyles}</head>`);
+  }
+
+  /**
+   * Save content to file
+   */
+  private async saveToFile(
+    content: string | Buffer,
+    outputPath: string
+  ): Promise<string> {
+    const directory = path.dirname(outputPath);
+    await fs.mkdir(directory, { recursive: true });
+    
+    if (Buffer.isBuffer(content)) {
+      await fs.writeFile(outputPath, content);
+    } else {
+      await fs.writeFile(outputPath, content, 'utf8');
+    }
+    
+    return outputPath;
+  }
+
+  /**
+   * Get MIME type for format
+   */
+  private getMimeType(format: ExportFormat): string {
+    const mimeTypes = {
+      'json': 'application/json',
+      'html': 'text/html',
+      'csv': 'text/csv',
+      'markdown': 'text/markdown',
+      'pdf': 'application/pdf',
+      'xml': 'application/xml'
+    };
+    
+    return mimeTypes[format] || 'application/octet-stream';
+  }
+
+  /**
+   * Generate standard format using base class
+   */
+  private async generateStandardFormat(
+    data: ExportData,
+    format: ExportFormat
+  ): Promise<string> {
+    switch (format) {
+      case 'json':
+        return super.exportJSON(data.analysis!);
+      case 'html':
+        return super.generateHTML(data.analysis!, {});
+      case 'csv':
+        return super.exportCSV(data.analysis!);
+      case 'markdown':
+        return super.exportMarkdown(data.analysis!);
+      default:
+        throw new Error(`Unsupported standard format: ${format}`);
+    }
+  }
+}

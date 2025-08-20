@@ -4,18 +4,42 @@
   <img width="1280" src="assets/logo_4x.png">
 </p>
 
-A terminal-based tool for advanced git branch analysis and visualization, providing insights into branch relationships, commit patterns, and repository health metrics.
+A terminal-based tool for advanced git branch analysis and visualization, providing insights into branch relationships, commit patterns, and repository health metrics with enterprise-grade features.
 
-## Features
+## ✨ Features
 
-- 🌿 **Advanced Branch Analysis**: Comprehensive analysis of all branches in your repository
-- 📊 **Visual Statistics**: Interactive terminal dashboard with branch metrics
-- 🔍 **Stale Branch Detection**: Identify abandoned or inactive branches
-- 📈 **Activity Tracking**: Monitor commit patterns and contributor activity
-- ⏳ **Progress Indicators**: Real-time progress tracking with ETA for large repositories
-- 📋 **Export Capabilities**: Generate reports in JSON, HTML, CSV, and Markdown formats
-- ⚡ **Fast Performance**: Handles repositories with 100+ branches efficiently
-- 🤖 **Script-Friendly**: Quiet mode for automated workflows and CI/CD integration
+### 🏥 Repository Health Monitoring
+
+- **6-Dimension Health Analysis**: Code Quality, Security, Collaboration, Maintenance, Activity, and Structure
+- **Comprehensive Health Reports**: Actionable insights with specific recommendations
+- **Health Scoring**: Quantitative assessment with improvement suggestions
+- **Export Support**: Generate health reports in JSON and Markdown formats
+
+### 🎨 Enhanced Visualizations
+
+- **Enhanced Branch Tree**: Hierarchical branch structure with metadata and beautiful ASCII art
+- **Activity Heatmap**: Calendar-style commit activity visualization with intensity levels
+- **Repository Timeline**: Chronological view of repository events and milestones
+- **Interactive Dashboard**: Comprehensive metrics, charts, and statistics
+- **Multiple Themes**: Dark, light, and customizable visualization themes
+
+### ⚙️ Advanced Configuration System
+
+- **Configuration Profiles**: Pre-built profiles for Enterprise, Open Source, Personal, Team, and Custom setups
+- **Environment Management**: Development, staging, production, testing, and local environment support
+- **Template System**: Automated setup workflows for different project types
+- **Import/Export**: Configuration backup and sharing capabilities
+
+### 🌿 Core Analysis Features
+
+- **Advanced Branch Analysis**: Comprehensive analysis of all branches in your repository
+- **Visual Statistics**: Interactive terminal dashboard with branch metrics
+- **Stale Branch Detection**: Identify abandoned or inactive branches
+- **Activity Tracking**: Monitor commit patterns and contributor activity
+- **Progress Indicators**: Real-time progress tracking with ETA for large repositories
+- **Export Capabilities**: Generate reports in JSON, HTML, CSV, and Markdown formats
+- **Fast Performance**: Handles repositories with 100+ branches efficiently
+- **Script-Friendly**: Quiet mode for automated workflows and CI/CD integration
 
 ## Installation
 
@@ -73,6 +97,48 @@ npx @risadams/bramble analyze . --quiet           # Disable progress indicators 
 
 # Batch processing
 npx @risadams/bramble analyze . --batch           # Batch mode for multiple repos
+```
+
+### Repository Health Analysis
+
+```bash
+# Generate comprehensive health report
+npx @risadams/bramble health .
+npx @risadams/bramble health . --format json
+npx @risadams/bramble health . --export health-report.md
+```
+
+### Enhanced Visualizations
+
+```bash
+# View branch tree visualization
+npx @risadams/bramble visualize tree
+
+# View activity heatmap
+npx @risadams/bramble visualize heatmap
+
+# View repository timeline
+npx @risadams/bramble visualize timeline
+
+# Interactive dashboard
+npx @risadams/bramble dashboard
+```
+
+### Configuration Management
+
+```bash
+# Profile management
+npx @risadams/bramble profiles list
+npx @risadams/bramble profiles create enterprise
+npx @risadams/bramble profiles set enterprise
+
+# Environment management
+npx @risadams/bramble environments current
+npx @risadams/bramble environments set production
+
+# Template management
+npx @risadams/bramble templates list
+npx @risadams/bramble templates apply open-source
 ```
 
 ## Interactive Interface
@@ -154,6 +220,7 @@ npm run lint       # Lint code
 Bramble provides real-time feedback during analysis, especially useful for repositories with many branches:
 
 ### Features
+
 - **Visual Progress Bars**: Show completion percentage and current progress
 - **ETA Calculation**: Estimates time remaining for repositories with >10 branches  
 - **Branch-by-Branch Progress**: Displays which branch is currently being analyzed
@@ -162,7 +229,8 @@ Bramble provides real-time feedback during analysis, especially useful for repos
 ### Examples
 
 **Normal Mode** (default):
-```
+
+```text
 🌿 Bramble - Git Branch Analysis Tool
 Repository analysis: [████████████████████████████████████████] (4/4) - Repository metadata collected
 
@@ -170,11 +238,13 @@ Analyzing 25 branches: [████████████░░░░░░�
 ```
 
 **Quiet Mode** (for scripts):
+
 ```bash
 npx @risadams/bramble analyze . --quiet
 ```
 
 **Verbose Mode** (detailed output):
+
 ```bash
 npx @risadams/bramble analyze . --verbose
 ```
@@ -214,12 +284,17 @@ MIT License - see LICENSE file for details
 
 ## Roadmap
 
-### ✅ Completed (v1.1.0)
+### ✅ Completed (v1.3.0)
+
+- [x] Repository Health Monitoring - 6-dimension health analysis with actionable insights
+- [x] Enhanced Visualizations - Branch trees, activity heatmaps, timelines, and interactive dashboards
+- [x] Advanced Configuration System - Profiles, environments, and templates for enterprise workflows
 - [x] Progress indicators with ETA calculation
 - [x] Quiet mode for automated scripts and CI/CD
 - [x] Enhanced user experience with real-time feedback
 
 ### 🚀 Upcoming Features
+
 - [ ] Advanced branch comparison features
 - [ ] Integration with GitHub/GitLab APIs
 - [ ] Custom analysis rules and filters
@@ -227,3 +302,6 @@ MIT License - see LICENSE file for details
 - [ ] Plugin system for extensibility
 - [ ] Branch dependency visualization
 - [ ] Automated stale branch cleanup suggestions
+- [ ] Network graphs for branch relationships
+- [ ] Git flow diagram generation
+- [ ] Advanced export formats (PDF, PowerBI, Tableau)

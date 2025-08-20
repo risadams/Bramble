@@ -4,8 +4,10 @@ import { GitAnalyzer, OptimizedAnalysisOptions } from '../core/GitAnalyzer.js';
 import { TerminalUI } from '../ui/TerminalUI.js';
 import { ExportService } from '../services/ExportService.js';
 import { RepositoryHealthService } from '../services/RepositoryHealthService.js';
+import { EnhancedVisualizationEngine } from '../services/EnhancedVisualizationEngine.js';
 import { BrambleConfig } from '../types/config.js';
 import { HealthAnalysisOptions } from '../types/health.js';
+import { VisualizationRequest, DARK_THEME, LIGHT_THEME } from '../types/visualization.js';
 import { ProgressIndicator, SpinnerIndicator } from '../utils/progressIndicator.js';
 
 interface BrambleOptions {
@@ -25,6 +27,10 @@ interface BrambleOptions {
   health?: boolean;
   healthExport?: string;
   healthDimensions?: string[];
+  // Enhanced visualization options
+  viz?: string;
+  vizTheme?: string;
+  vizConfig?: any;
 }
 
 export class BrambleApp {
@@ -32,6 +38,7 @@ export class BrambleApp {
   private ui: TerminalUI;
   private exportService: ExportService;
   private healthService: RepositoryHealthService;
+  private visualizationEngine: EnhancedVisualizationEngine;
   private options: BrambleOptions;
 
   constructor(private repositoryPath: string, options: BrambleOptions = {}) {
@@ -43,6 +50,10 @@ export class BrambleApp {
       this.gitAnalyzer.getGit(), 
       repositoryPath,
       options.config?.health
+    );
+    this.visualizationEngine = new EnhancedVisualizationEngine(
+      options.vizConfig,
+      this.getVisualizationTheme(options.vizTheme)
     );
   }
 
@@ -155,15 +166,20 @@ export class BrambleApp {
         await this.generateHealthReport(analysisResult);
       }
 
+      // Generate enhanced visualization if requested
+      if (this.options.viz) {
+        await this.runEnhancedVisualization(analysisResult);
+      }
+
       // Export if requested
       if (this.options.export) {
         await this.exportResults(analysisResult);
       }
 
-      // Start interactive UI only if not in batch mode
-      if (!this.options.batch) {
+      // Start interactive UI only if not in batch mode and no visualization was requested
+      if (!this.options.batch && !this.options.viz) {
         await this.ui.start(analysisResult);
-      } else {
+      } else if (!this.options.viz) {
         console.log(chalk.green('✅ Analysis complete. Use --export to save results.'));
       }
 
@@ -336,5 +352,50 @@ ${healthReport.summary.quickWins.map((win: string) => `- ${win}`).join('\n')}
     }
 
     return options;
+  }
+
+  private getVisualizationTheme(themeName?: string) {
+    switch (themeName?.toLowerCase()) {
+      case 'light':
+        return LIGHT_THEME;
+      case 'dark':
+      default:
+        return DARK_THEME;
+    }
+  }
+
+  private async runEnhancedVisualization(analysisResult: any): Promise<void> {
+    if (!this.options.viz) return;
+
+    console.log(chalk.blue.bold('\n🎨 Enhanced Visualization\n'));
+
+    const request: VisualizationRequest = {
+      type: this.options.viz as any,
+      data: analysisResult,
+      config: this.options.vizConfig,
+      theme: this.getVisualizationTheme(this.options.vizTheme)
+    };
+
+    try {
+      const visualization = this.visualizationEngine.generate(request);
+      console.log(visualization);
+
+      // Export if requested
+      if (this.options.export && this.options.viz) {
+        await this.exportVisualization(visualization, this.options.export);
+      }
+    } catch (error) {
+      console.error(chalk.red('❌ Visualization error:'), error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+
+  private async exportVisualization(visualization: string, filename: string): Promise<void> {
+    try {
+      const fs = await import('fs/promises');
+      await fs.writeFile(filename, visualization, 'utf-8');
+      console.log(chalk.green(`✅ Visualization exported to ${filename}`));
+    } catch (error) {
+      console.error(chalk.red('❌ Export error:'), error instanceof Error ? error.message : 'Unknown error');
+    }
   }
 }
